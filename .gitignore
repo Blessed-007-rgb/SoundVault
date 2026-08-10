@@ -1,0 +1,34 @@
+# Dados sensíveis / gerados automaticamente / pessoais por perfil — nunca versionar
+**/cookies.txt
+**/sync_state.json
+**/sync_state.json.bak
+**/playlist_cache.json
+**/playlist_cache.json.bak
+**/cookie_health.json
+**/playlist.txt
+**/playlist*.txt.bak
+**/Logs/
+**/.lock
+**/*.tmp
+
+# Sessão e dados de scraping do Spotify export
+**/.spotify_session/
+**/spotify_export_debug.log
+**/spotify_export_page*.html
+**/_staging_playlist.txt
+
+# Músicas baixadas (áudio, não deve ir para o repositório)
+**/Musicas/
+
+# Playlists de cada perfil (playlist.txt, Musicas/ e demais dados
+# pessoais dentro de cada playlists\<Nome>\) — cobre tudo de uma vez,
+# além dos padrões individuais acima.
+**/playlists/
+
+# Python
+__pycache__/
+*.pyc
+
+# Planejamento interno (specs/plans do Claude Code) — não é documentação
+# do projeto, e historicamente teve caminho absoluto pessoal registrado.
+docs/

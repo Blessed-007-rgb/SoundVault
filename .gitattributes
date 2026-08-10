@@ -1,0 +1,5 @@
+# Scripts .bat do Windows precisam de final de linha CRLF — LF-only pode
+# causar erros de parsing no cmd.exe (comandos fragmentados linha a linha),
+# especialmente combinado com chcp 65001. Forçado aqui porque editores/
+# ferramentas que rodam fora do Windows tendem a salvar em LF.
+*.bat text eol=crlf
