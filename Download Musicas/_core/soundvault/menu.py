@@ -1,6 +1,6 @@
 import os
 
-from . import config, playlists
+from . import config, eq_presets, playlists
 from .console_log import console, RICH_OK, cprint, log
 from .storage import carregar_state, salvar_state, carregar_historico
 from .lock import LockError
@@ -167,6 +167,91 @@ def gerenciar_playlists():
             return
 
 
+def configurar_eq():
+    """
+    Escolhe o preset de EQ/loudness de uma playlist (opção E). Grava em
+    playlists/<nome>/preset.json e, se confirmado, aplica na hora
+    chamando reconciliar_links — senão só entra em vigor no próximo Sync
+    dessa playlist.
+    """
+    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    nomes = playlists.listar_playlists()
+    if not nomes:
+        cprint("[yellow]Nenhuma playlist encontrada. Use 'Gerenciar Playlists' (G) pra criar uma.[/]")
+        return
+
+    ids_presets = list(eq_presets.PRESETS.keys())
+
+    if RICH_OK:
+        t = Table(box=box.ROUNDED, show_header=True, header_style="bold dim", padding=(0, 2))
+        t.add_column("#", style="dim", width=4)
+        t.add_column("Playlist", style="white")
+        t.add_column("Preset atual", style="cyan")
+        for i, n in enumerate(nomes, 1):
+            t.add_row(str(i), n, eq_presets.PRESETS[playlists.ler_preset(n)]["label"])
+        console.print(Panel(t, title="[bold]CONFIGURAR EQ[/]", border_style="blue"))
+        escolha = Prompt.ask(
+            "  Escolha a playlist (0 pra cancelar)",
+            choices=["0"] + [str(i) for i in range(1, len(nomes) + 1)], default="0",
+        )
+    else:
+        for i, n in enumerate(nomes, 1):
+            print(f"  {i} - {n} [{playlists.ler_preset(n)}]")
+        escolha = input("Escolha a playlist (0 pra cancelar): ").strip()
+
+    if escolha == "0":
+        return
+    try:
+        idx = int(escolha) - 1
+    except ValueError:
+        cprint("[red]Entrada inválida.[/]")
+        return
+    if not (0 <= idx < len(nomes)):
+        cprint("[red]Entrada inválida.[/]")
+        return
+    nome_playlist = nomes[idx]
+
+    if RICH_OK:
+        tp = Table(box=box.SIMPLE, show_header=False)
+        tp.add_column(style="bold cyan", width=4)
+        tp.add_column()
+        for i, pid in enumerate(ids_presets, 1):
+            tp.add_row(str(i), eq_presets.PRESETS[pid]["label"])
+        console.print(tp)
+        escolha_p = Prompt.ask("  Escolha o preset", choices=[str(i) for i in range(1, len(ids_presets) + 1)], default="1")
+    else:
+        for i, pid in enumerate(ids_presets, 1):
+            print(f"  {i} - {eq_presets.PRESETS[pid]['label']}")
+        escolha_p = input("Escolha o preset: ").strip()
+
+    try:
+        idx_p = int(escolha_p) - 1
+    except ValueError:
+        cprint("[red]Entrada inválida.[/]")
+        return
+    if not (0 <= idx_p < len(ids_presets)):
+        cprint("[red]Entrada inválida.[/]")
+        return
+    preset_escolhido = ids_presets[idx_p]
+
+    playlists.definir_preset(nome_playlist, preset_escolhido)
+    cprint(f"[green]✓ Preset '{eq_presets.PRESETS[preset_escolhido]['label']}' salvo para '{nome_playlist}'.[/]" if RICH_OK else "Preset salvo.")
+
+    if RICH_OK:
+        aplicar = Prompt.ask(
+            "  Aplicar agora? (senão entra em vigor no próximo Sync dessa playlist)",
+            choices=["S", "s", "N", "n"], default="S",
+        ).upper()
+    else:
+        aplicar = input("Aplicar agora (S/N)? ").strip().upper()
+
+    if aplicar == "S":
+        criados, removidos, faltando = playlists.reconciliar_links(nome_playlist)
+        cprint(f"[green]✓ {criados} renderizada(s), {removidos} removida(s)[/]" if RICH_OK else f"{criados} renderizadas, {removidos} removidas")
+        if faltando:
+            cprint(f"[yellow]  {len(faltando)} música(s) ainda não baixada(s) no pool — serão renderizadas no próximo Sync.[/]")
+
+
 def mostrar_help():
     os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
     if RICH_OK:
@@ -186,8 +271,9 @@ def mostrar_help():
         t2.add_row("5 · Verificar Biblioteca", "Use para checar se tudo está em ordem.\nCompara playlist.txt × registros × arquivos no disco.")
         t2.add_row("6 · Limpar Registros", "Use quando deletar músicas manualmente do disco.\nRemove os registros delas — o próximo Sync vai rebaixar.")
         t2.add_row("7 · Verificar Cache", "Use se o Sync mostrar músicas sem URL.\nValida o playlist_cache.json e aponta entradas problemáticas.")
-        t2.add_row("8 · Reaplicar Áudio", "Use após mudar configurações de volume ou EQ no código.\nReprocessa todos os .mp3 existentes com as novas configurações.")
+        t2.add_row("8 · Reaplicar Áudio", "Use após mudar preset de uma playlist ou o código de EQ.\nRe-renderiza as playlists existentes com o preset de cada uma.")
         t2.add_row("9 · Corrigir Metadados", "Use se músicas aparecerem sem nome/artista no player.\nRegrava título, artista e capa em todos os .mp3.")
+        t2.add_row("E · Configurar EQ", "Use pra mudar o preset de som de uma playlist.\nPadrão, Fone de Ouvido, Caixa de Som ou Som Automotivo.")
         t2.add_row("P · Resetar Puladas", "Use quando quiser retentar músicas puladas por copyright.\nLista as puladas, escolha quais liberar — depois rode Sync.")
         t2.add_row("R · Registrar MP3s do Disco", "Use ao migrar de máquina ou copiar músicas manualmente.\nImporta os .mp3 existentes para o sistema não baixar de novo.")
         t2.add_row("H · Help", "Esta tela.")
@@ -220,8 +306,9 @@ MENU = [
     ("5", "Verificar Biblioteca",   "Compara playlist vs registros vs disco"),
     ("6", "Limpar Registros",       "Remove registros de músicas que não existem mais no disco"),
     ("7", "Verificar Cache",        "Verifica integridade do playlist_cache.json"),
-    ("8", "Reaplicar Áudio",        "Reprocessa EQ e volume em todos os .mp3 existentes"),
+    ("8", "Reaplicar Áudio",        "Re-renderiza todas as playlists com o preset de cada uma"),
     ("9", "Corrigir Metadados",     "Grava título, artista e capa nos .mp3 existentes"),
+    ("E", "Configurar EQ",          "Escolhe o preset de EQ/loudness de uma playlist"),
     ("P", "Resetar Puladas",        "Lista músicas puladas por copyright e libera para retry"),
     ("R", "Registrar MP3s do Disco","Importa .mp3 existentes que o sistema não conhece"),
     ("G", "Gerenciar Playlists",    "Criar, listar e remover playlists do perfil"),
@@ -233,7 +320,7 @@ MENU = [
 # única seção, na mesma ordem em que está definido em MENU.
 GRUPOS_MENU = [
     ("SINCRONIZAÇÃO", ["1", "2"]),
-    ("MANUTENÇÃO", ["3", "4", "5", "6", "7", "8", "9", "P", "R"]),
+    ("MANUTENÇÃO", ["3", "4", "5", "6", "7", "8", "9", "E", "P", "R"]),
     ("SISTEMA", ["G", "H", "0"]),
 ]
 
@@ -344,6 +431,7 @@ def menu():
             elif opcao == "7": exibir_validacao_cache()
             elif opcao == "8": reaplicar_audio()
             elif opcao == "9": fix_tags()
+            elif opcao == "E": configurar_eq()
             elif opcao == "P": resetar_skips_copyright()
             elif opcao == "R": rebuild()
             elif opcao == "G": gerenciar_playlists()
