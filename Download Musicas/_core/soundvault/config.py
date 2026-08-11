@@ -74,15 +74,9 @@ COOKIE_HEALTH_CHECK_INTERVAL_H = 12
 # de um Sync (health-check) — testar em todo Sync gastaria alguns segundos
 # à toa quando o cookie provavelmente ainda está válido.
 NORMALIZAR_VOLUME = True
-PEAK_TARGET       = -3.0
-# -3.0 dBFS (não -1.0): a recodificação com perdas pra MP3 (libmp3lame)
-# gera picos "entre amostras" que podem exceder o pico medido antes da
-# codificação — com só 1dB de margem, esse overshoot come toda a
-# redução e o pico final fica preso no teto (0 dBFS) de forma
-# inconsistente entre faixas. -3dB é a margem padrão recomendada pra
-# evitar isso (confirmado empiricamente: com -1dB o pico não abaixava
-# do teto; a partir de -2/-3dB passou a refletir o ganho real).
-EQ_ATIVO          = True
+# Parâmetros de EQ/loudness (antes PEAK_TARGET/EQ_ATIVO fixos aqui) agora
+# vivem por preset em eq_presets.py, escolhidos por playlist — ver
+# playlists.ler_preset()/definir_preset() e audio.renderizar_audio().
 
 
 def verificar_dependencias():
