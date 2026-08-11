@@ -9,7 +9,6 @@ from .console_log import log
 from .playlist import parsear, nome_arquivo, checar_integridade, calcular_md5, sanitizar, classificar_erro, extrair_video_id, ERROS_REDE
 from .storage import _state_lock, salvar_cache_entrada
 from .tags import gravar_tags
-from .audio import normalizar_volume
 
 _workers_ativos = 3
 _rate_limit_lock = threading.Lock()
@@ -220,7 +219,6 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
             ultimo_erro = "arquivo corrompido ou vazio"
             continue
 
-        normalizar_volume(destino)
         gravar_tags(destino, artista, titulo, url_video=url)
 
         if video_id:
