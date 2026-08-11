@@ -3,7 +3,7 @@ import os
 import shutil
 from pathlib import Path
 
-from . import config, eq_presets
+from . import audio, config, eq_presets
 from .console_log import log
 from .playlist import carregar_playlist as _carregar_playlist_de, parsear, nome_arquivo
 
@@ -219,18 +219,27 @@ def ordem_round_robin(playlist: list[str]) -> list[str]:
 
 def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
     """
-    Garante que playlists\\<nome>\\Musicas\\ tem exatamente um arquivo
-    por música do playlist.txt dessa playlist — cria os links que
-    faltam (hardlink, fallback cópia), remove os que sobraram.
+    Garante que playlists\\<nome>\\Musicas\\ tem exatamente um arquivo por
+    música do playlist.txt dessa playlist, renderizado com o preset de EQ
+    atual da playlist (ver ler_preset()).
 
     Os nomes dos arquivos nessa pasta levam um prefixo numérico que
     reflete a ordem de rodízio por artista (ordem_round_robin) — pensado
     pra tocadores de pendrive/carro que reproduzem em ordem alfabética de
-    nome de arquivo. O pool central (DOWNLOAD_DIR) não é afetado — os
-    nomes lá continuam estáveis (é a chave usada por sync_state.json).
+    nome de arquivo. O pool central (DOWNLOAD_DIR) não é afetado — fica
+    sempre cru, é a fonte usada pra renderizar cada playlist.
+
+    Reaproveita renders existentes (via render_state.json) quando o
+    preset e a receita de EQ não mudaram — só chama o FFmpeg pra música
+    nova ou quando o preset foi trocado. Se só a ORDEM mudou (prefixo
+    diferente pro mesmo conteúdo), renomeia o arquivo em vez de
+    renderizar de novo.
+
+    Se config.NORMALIZAR_VOLUME estiver desligado, cai pro comportamento
+    antigo (hardlink puro do pool, sem processamento nenhum).
 
     Retorna (criados, removidos, faltando_no_pool) — faltando_no_pool
-    lista músicas que deveriam ter link mas ainda não foram baixadas
+    lista músicas que deveriam ter arquivo mas ainda não foram baixadas
     pro pool central (não é erro, só reflete Sync incompleto/pendente).
     """
     playlist = carregar_playlist(nome)
@@ -239,12 +248,63 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
 
     ordenada = ordem_round_robin(playlist)
     largura = max(len(str(len(ordenada))), 2)
-    # nome_prefixado -> nome_no_pool_central (sem prefixo, pra achar a origem)
-    mapa_esperados = {
-        f"{i:0{largura}d} - {nome_arquivo(*parsear(n))}.mp3": f"{nome_arquivo(*parsear(n))}.mp3"
+    esperado_por_chave = {
+        n: f"{i:0{largura}d} - {nome_arquivo(*parsear(n))}.mp3"
         for i, n in enumerate(ordenada, 1)
     }
 
+    if not config.NORMALIZAR_VOLUME:
+        return _reconciliar_links_sem_processamento(esperado_por_chave, pasta)
+
+    preset_id = ler_preset(nome)
+    perfil = audio.perfil_atual(preset_id)
+    render_state = _ler_render_state(nome)
+
+    esperados_nomes = set(esperado_por_chave.values())
+    existentes = {f.name for f in pasta.glob("*.mp3")}
+
+    removidos = 0
+    for nome_arq in existentes - esperados_nomes:
+        (pasta / nome_arq).unlink(missing_ok=True)
+        removidos += 1
+    for chave in list(render_state.keys()):
+        if chave not in esperado_por_chave:
+            del render_state[chave]
+
+    criados = 0
+    faltando_no_pool = []
+
+    for chave, nome_arq in esperado_por_chave.items():
+        destino = pasta / nome_arq
+        entrada = render_state.get(chave)
+
+        if entrada and entrada.get("preset") == preset_id and entrada.get("hash") == perfil:
+            antigo = pasta / entrada.get("file", "")
+            if antigo.exists():
+                if antigo != destino:
+                    antigo.rename(destino)
+                    entrada["file"] = nome_arq
+                continue
+            # arquivo sumiu do disco apesar do render_state achar que
+            # existia — cai pro render abaixo como se fosse novo.
+
+        origem = config.DOWNLOAD_DIR / f"{nome_arquivo(*parsear(chave))}.mp3"
+        if not origem.exists():
+            faltando_no_pool.append(f"{nome_arquivo(*parsear(chave))}.mp3")
+            continue
+
+        if audio.renderizar_audio(origem, destino, preset_id):
+            render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
+            criados += 1
+
+    _salvar_render_state(nome, render_state)
+    return criados, removidos, faltando_no_pool
+
+
+def _reconciliar_links_sem_processamento(esperado_por_chave: dict, pasta: Path) -> tuple[int, int, list[str]]:
+    """Comportamento antigo (hardlink puro do pool) — usado quando
+    config.NORMALIZAR_VOLUME está desligado."""
+    mapa_esperados = {nome_arq: chave for chave, nome_arq in esperado_por_chave.items()}
     esperados = set(mapa_esperados.keys())
     existentes = {f.name for f in pasta.glob("*.mp3")}
 
@@ -256,7 +316,8 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
     criados = 0
     faltando_no_pool = []
     for nome_arq in esperados - existentes:
-        base = mapa_esperados[nome_arq]
+        chave = mapa_esperados[nome_arq]
+        base = f"{nome_arquivo(*parsear(chave))}.mp3"
         origem = config.DOWNLOAD_DIR / base
         if not origem.exists():
             faltando_no_pool.append(base)
