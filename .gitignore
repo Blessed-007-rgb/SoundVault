@@ -29,6 +29,10 @@
 __pycache__/
 *.pyc
 
+# Paginas salvas do navegador (ex: "Salvar como" em tutoriais externos)
+*.htm
+*.html
+
 # Planejamento interno (specs/plans do Claude Code) — não é documentação
 # do projeto, e historicamente teve caminho absoluto pessoal registrado.
 docs/
