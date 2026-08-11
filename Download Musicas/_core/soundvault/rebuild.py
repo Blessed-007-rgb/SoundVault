@@ -7,7 +7,6 @@ from .playlist import parsear, nome_arquivo, sanitizar, calcular_md5, detectar_c
 from . import playlists
 from .storage import carregar_state, salvar_state
 from .tags import gravar_tags
-from .audio import normalizar_volume, ja_processado_com_perfil_atual
 
 if RICH_OK:
     from rich.table import Table
@@ -135,49 +134,48 @@ def fix_tags():
 
 def reaplicar_audio():
     """
-    Reprocessa EQ + normalização de volume em todos os .mp3 existentes.
+    Re-renderiza todas as playlists do perfil com o preset de EQ/loudness
+    de cada uma. A marca de perfil gravada em cada MP3 renderizado já
+    reflete o preset e a receita de EQ atuais (ver audio.perfil_atual),
+    então isso naturalmente pula o que não mudou e só reprocessa o que
+    precisa — preset trocado numa playlist, ou mudança na receita de EQ
+    no código (eq_presets.py).
     """
     os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
     import shutil
     if not shutil.which("ffmpeg"):
         cprint("[red]FFmpeg não encontrado no PATH.[/]")
         return
-    arquivos = sorted([f for f in config.DOWNLOAD_DIR.glob("*.mp3") if not f.stem.startswith("__dl_")])
-    if not arquivos:
-        cprint("[yellow]Nenhum .mp3 encontrado na pasta.[/]")
+    nomes = playlists.listar_playlists()
+    if not nomes:
+        cprint("[yellow]Nenhuma playlist encontrada.[/]")
         return
 
-    ok, erros, pulados = 0, 0, 0
+    total_criados, total_removidos, total_faltando = 0, 0, 0
 
-    def _processar(f):
-        nonlocal ok, erros, pulados
-        # Evita reaplicar o mesmo EQ em cima do EQ já aplicado (ganhos
-        # somariam e cada passagem recodifica com perda) — pula arquivos
-        # já marcados com o perfil de EQ/normalização atual.
-        if ja_processado_com_perfil_atual(f):
-            pulados += 1
-            return
-        if normalizar_volume(f):
-            ok += 1
-        else:
-            erros += 1
+    def _processar(n):
+        nonlocal total_criados, total_removidos, total_faltando
+        criados, removidos, faltando = playlists.reconciliar_links(n)
+        total_criados += criados
+        total_removidos += removidos
+        total_faltando += len(faltando)
 
     if RICH_OK:
         with Progress(
             SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
             BarColumn(bar_width=36), MofNCompleteColumn(), TimeElapsedColumn(), console=console,
         ) as prog:
-            task = prog.add_task("Processando...", total=len(arquivos))
-            for f in arquivos:
-                _processar(f)
+            task = prog.add_task("Playlists...", total=len(nomes))
+            for n in nomes:
+                _processar(n)
                 prog.advance(task)
     else:
-        for f in arquivos:
-            _processar(f)
+        for n in nomes:
+            _processar(n)
 
-    log.info(f"Reaplicar áudio — OK: {ok} | Erros: {erros} | Já processados (pulados): {pulados}")
-    cor = "green" if erros == 0 else "yellow"
-    msg = f"✓ Concluído: {ok} processados, {erros} erros"
-    if pulados:
-        msg += f", {pulados} já estavam com o perfil atual (pulados)"
+    log.info(f"Reaplicar áudio — {total_criados} renderizadas, {total_removidos} removidas, {total_faltando} pendentes de download.")
+    cor = "green" if total_faltando == 0 else "yellow"
+    msg = f"✓ Concluído: {total_criados} renderizada(s), {total_removidos} removida(s)"
+    if total_faltando:
+        msg += f", {total_faltando} ainda não baixada(s) no pool"
     cprint(f"[{cor}]{msg}.[/]" if RICH_OK else f"{msg}.")
