@@ -64,12 +64,17 @@ Download Musicas\
   iniciar.bat                       ← lista os perfis existentes e abre o escolhido
   Main\                             ← seu perfil pessoal (padrão)
     play.bat                        ← abre o menu do seu perfil
-    playlist.txt                    ← [não versionado] lista de músicas que você quer
     playlist_cache.json             ← [não versionado] URLs do YouTube (auto ou via TuneMyMusic)
     cookies.txt                     ← [não versionado] cookies do YouTube
     sync_state.json                 ← [não versionado] controle do que já foi baixado (automático)
-    Musicas\                        ← [não versionado] arquivos MP3
+    Musicas\                        ← [não versionado] pool central — MP3 crus, sem EQ/normalização
     Logs\                           ← [não versionado] logs (automático)
+    playlists\                      ← [não versionado] uma pasta por playlist do perfil
+      NomeDaPlaylist\
+        playlist.txt                ← lista de músicas dessa playlist
+        preset.json                 ← preset de EQ/loudness escolhido (opção E do menu)
+        render_state.json           ← controle do que já foi renderizado com qual preset
+        Musicas\                    ← MP3 renderizados a partir do pool com o preset acima
     Spotify export\
       spotify_export.bat            ← extrai playlist do Spotify pra playlist.txt
   Tiago\                            ← perfil de um amigo
@@ -103,8 +108,9 @@ Duplo clique no `play_tiago.bat` dentro de `Tiago\`. O `.bat` contém
 
 1. Crie uma pasta com o nome do amigo dentro de `Download Musicas\`
    (ex: `Download Musicas\Pedro\`).
-2. Coloque o `playlist.txt` (e opcionalmente `playlist_cache.json`) do
-   amigo dentro.
+2. Coloque o `playlist_cache.json` (opcional) do amigo na raiz dessa
+   pasta — os `playlist.txt` de cada playlist são criados depois, pela
+   opção G do menu (veja seção 6).
 3. Crie um `play_pedro.bat`:
 
    ```bat
@@ -135,17 +141,55 @@ execução.
 
 | Opção | Nome | Descrição |
 |---|---|---|
-| 1 | Sincronizar | Baixa músicas pendentes do `playlist.txt`. Remove do disco músicas que saíram da playlist (bidirecional). Tenta até 3x em falha de rede. Músicas com copyright tentam URL alternativa. |
+| 1 | Sincronizar | Baixa músicas pendentes do `playlist.txt` pro pool. Remove do disco músicas que saíram da playlist (bidirecional). Ao final, renderiza cada playlist sincronizada com o preset de EQ configurado nela. Tenta até 3x em falha de rede. Músicas com copyright tentam URL alternativa. |
 | 2 | Retry de Falhas | Tenta de novo só as músicas que falharam no último Sync. |
-| 3 | Remover Duplicatas | Detecta e remove MP3s duplicados por hash MD5. |
-| 4 | Verificar Biblioteca (Auditoria) | Compara `playlist.txt` × `sync_state.json` × disco. Mostra faltando, órfãos, corrompidos, sem URL. |
-| 5 | Limpar Registros | Remove do `sync_state.json` entradas cujo MP3 não existe mais no disco. |
-| 6 | Verificar Cache | Valida o `playlist_cache.json`: entradas sem URL, URLs inválidas, IDs errados. |
-| 7 | Reaplicar Áudio | Reprocessa EQ e normalização de volume nos MP3 existentes. |
-| 8 | Corrigir Metadados | Grava título, artista e capa nos MP3 existentes. |
-| 9 | Registrar MP3s do Disco | Importa MP3s existentes que o sistema não conhece; consolida duplicatas no `sync_state.json`. |
+| 3 | Limpar Playlist.txt | Remove duplicatas do `playlist.txt`, salvando backup antes de alterar. |
+| 4 | Remover Duplicatas MP3 | Detecta e remove MP3s duplicados por conteúdo real (hash MD5), não só pelo nome. |
+| 5 | Verificar Biblioteca (Auditoria) | Compara `playlist.txt` × `sync_state.json` × disco. Mostra faltando, órfãos, corrompidos, sem URL. |
+| 6 | Limpar Registros | Remove do `sync_state.json` entradas cujo MP3 não existe mais no disco. |
+| 7 | Verificar Cache | Valida o `playlist_cache.json`: entradas sem URL, URLs inválidas, IDs errados. |
+| 8 | Reaplicar Áudio | Re-renderiza as playlists existentes com o preset de EQ/loudness de cada uma. Use depois de mudar um preset ou o código de EQ. |
+| 9 | Corrigir Metadados | Grava título, artista e capa nos MP3 existentes. |
+| E | Configurar EQ | Escolhe o preset de EQ/loudness (Padrão, Fone de Ouvido, Caixa de Som ou Som Automotivo) de uma playlist. Pode aplicar na hora ou deixar para o próximo Sync. |
+| P | Resetar Puladas | Lista músicas puladas por copyright/indisponibilidade e libera as escolhidas para retry no próximo Sync. |
+| R | Registrar MP3s do Disco | Importa MP3s existentes que o sistema não conhece; consolida duplicatas no `sync_state.json`. |
+| G | Gerenciar Playlists | Cria, lista e remove playlists dentro do perfil. |
 | H | Help | Documentação detalhada dentro do próprio programa. |
 | 0 | Sair | — |
+
+## 4.1 EQ e loudness por playlist
+
+O pool central (`Musicas\`) guarda os MP3 **crus**, exatamente como
+baixados — sem normalização nem equalização. Cada playlist tem sua
+própria pasta de saída, com os arquivos **renderizados** a partir do
+pool aplicando o preset de EQ/loudness configurado para aquela
+playlist especificamente (arquivo `preset.json` dentro da pasta da
+playlist, junto com um `render_state.json` que controla o que já foi
+renderizado com qual preset).
+
+Presets disponíveis (definidos em
+`_core\soundvault\eq_presets.py`), cada um combinando um alvo de
+loudness (EBU R128 / LUFS, o mesmo tipo de normalização que o Spotify
+usa) com uma curva de equalização:
+
+| Preset | Uso indicado | Loudness alvo |
+|---|---|---|
+| Padrão (Plano) | Sem coloração — sinal fiel ao master original | -14 LUFS |
+| Fone de Ouvido | Leve realce de grave e agudo | -14 LUFS |
+| Caixa de Som | Realce de grave mais forte (curva em V, tipo JBL) | -14 LUFS |
+| Som Automotivo | Mais alto pra competir com ruído de estrada, grave reforçado | -11 LUFS |
+
+Fluxo prático:
+
+- **Playlist nova / preset ainda não mudado**: o Sync já renderiza
+  com o preset padrão (ou o que estiver salvo) automaticamente — não
+  precisa de passo extra.
+- **Trocar o preset de uma playlist**: use a opção **E**. Se escolher
+  "Aplicar agora", ele re-renderiza a playlist na hora; se não, o
+  novo preset só entra em vigor no próximo Sync dessa playlist.
+- **Reprocessar tudo depois de mexer no código de EQ**: use a opção
+  **8 — Reaplicar Áudio**, que re-renderiza todas as playlists com o
+  preset de cada uma, sem precisar rebaixar nada do pool.
 
 ## 5. Cookies do YouTube
 
@@ -164,6 +208,8 @@ expirou — exporte um novo e substitua o arquivo.
 
 ## 6. Formato do `playlist.txt`
 
+Cada playlist tem o seu, em `playlists\NomeDaPlaylist\playlist.txt`
+(crie/liste playlists pela opção **G — Gerenciar Playlists** do menu).
 Uma música por linha, no formato `Artista - Título`:
 
 ```
@@ -230,26 +276,29 @@ Todos os logs ficam em `NomeDoPerfil\Logs\`:
   perfil.
 
 **`sync_state.json` inconsistente**
-- Opção 9 (Registrar MP3s do Disco) para consolidar
-- Opção 5 (Limpar Registros) para remover entradas sem arquivo
+- Opção R (Registrar MP3s do Disco) para consolidar
+- Opção 6 (Limpar Registros) para remover entradas sem arquivo
 
 ## 10. Fluxo recomendado
 
 **Primeira vez com um perfil novo**
 1. Criar a pasta do perfil dentro de `Download Musicas\`
-2. Colocar `playlist.txt` (e `playlist_cache.json`, se tiver)
-3. Colocar `cookies.txt`
-4. Abrir o `.bat` do perfil
-5. Opção 1 — Sincronizar
+2. Colocar `playlist_cache.json` (se tiver) na raiz do perfil e `cookies.txt`
+3. Abrir o `.bat` do perfil
+4. Opção G — Gerenciar Playlists, pra criar sua(s) playlist(s)
+5. Preencher o `playlist.txt` de cada playlist criada (veja seção 6)
+6. Opcional: Opção E — Configurar EQ, pra escolher o preset de som de cada playlist
+7. Opção 1 — Sincronizar
 
 **Manutenção regular**
-1. Atualizar `playlist.txt` com músicas novas ou remover as que não quer
-2. Opção 1 — Sincronizar (baixa as novas, remove as que saíram, busca
-   URL automaticamente para músicas novas sem cache)
-3. Opção 4 — Verificar Biblioteca para confirmar que está tudo ok
+1. Atualizar o `playlist.txt` da playlist com músicas novas ou remover as que não quer
+2. Opção 1 — Sincronizar (baixa as novas no pool, remove as que saíram,
+   busca URL automaticamente para músicas novas sem cache, e renderiza a
+   playlist com o preset de EQ configurado)
+3. Opção 5 — Verificar Biblioteca para confirmar que está tudo ok
 
 **Após apagar arquivos manualmente**
-1. Opção 5 — Limpar Registros
+1. Opção 6 — Limpar Registros
 2. Opção 1 — Sincronizar para rebaixar
 
 **Ao migrar de máquina / pasta**
