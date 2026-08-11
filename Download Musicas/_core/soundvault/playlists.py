@@ -1,8 +1,9 @@
+import json
 import os
 import shutil
 from pathlib import Path
 
-from . import config
+from . import config, eq_presets
 from .console_log import log
 from .playlist import carregar_playlist as _carregar_playlist_de, parsear, nome_arquivo
 
@@ -61,6 +62,58 @@ def criar_playlist(nome: str) -> Path:
             encoding="utf-8",
         )
     return caminho
+
+
+def caminho_preset(nome: str) -> Path:
+    return playlists_dir() / _validar_nome(nome) / "preset.json"
+
+
+def ler_preset(nome: str) -> str:
+    """Preset de EQ/loudness atual da playlist. Ausente ou corrompido cai
+    silenciosamente pro Padrão — uma playlist sem preset.json (ex: criada
+    antes desta funcionalidade existir) continua funcionando sem migração."""
+    caminho = caminho_preset(nome)
+    if not caminho.exists():
+        return eq_presets.PRESET_PADRAO
+    try:
+        dados = json.loads(caminho.read_text(encoding="utf-8"))
+        preset_id = dados.get("preset", eq_presets.PRESET_PADRAO)
+        return preset_id if eq_presets.preset_valido(preset_id) else eq_presets.PRESET_PADRAO
+    except (json.JSONDecodeError, OSError):
+        return eq_presets.PRESET_PADRAO
+
+
+def definir_preset(nome: str, preset_id: str):
+    if not eq_presets.preset_valido(preset_id):
+        raise ValueError(f"Preset desconhecido: {preset_id}")
+    caminho = caminho_preset(nome)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(json.dumps({"preset": preset_id}), encoding="utf-8")
+
+
+def _caminho_render_state(nome: str) -> Path:
+    return playlists_dir() / _validar_nome(nome) / "render_state.json"
+
+
+def _ler_render_state(nome: str) -> dict:
+    """Cache de quais músicas da playlist já foram renderizadas, com qual
+    preset/hash e sob qual nome de arquivo — ver reconciliar_links().
+    Corrompido ou ausente vira dict vazio: força re-render geral dessa
+    playlist na próxima reconciliação, mas não quebra nada (é
+    regenerável, ao contrário de sync_state.json)."""
+    caminho = _caminho_render_state(nome)
+    if not caminho.exists():
+        return {}
+    try:
+        return json.loads(caminho.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _salvar_render_state(nome: str, state: dict):
+    caminho = _caminho_render_state(nome)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def remover_playlist(nome: str):
