@@ -191,6 +191,35 @@ Fluxo prático:
   **8 — Reaplicar Áudio**, que re-renderiza todas as playlists com o
   preset de cada uma, sem precisar rebaixar nada do pool.
 
+## 4.2 Pool compartilhado entre playlists
+
+O pool (`Musicas\` na raiz do perfil) é único por perfil — todas as
+playlists desse perfil bebem dele. Isso tem duas consequências:
+
+- **Música repetida em duas playlists não é baixada duas vezes.** Se
+  ela já está no pool (baixada por qualquer playlist), uma playlist
+  nova que a inclua só renderiza a versão dela com o próprio preset —
+  sem passar pelo YouTube de novo.
+- **Tirar uma música de uma playlist não apaga ela do pool na hora.**
+  O Sync só remove uma música do pool quando ela não está em
+  **nenhuma** playlist do perfil (é a união de todas, não só a que
+  você está sincronizando). Enquanto outra playlist ainda usa aquela
+  música, ela continua no pool — só some da pasta da playlist de onde
+  foi removida.
+
+As pastas de cada playlist se atualizam **sozinhas** a cada Sync: o
+`reconciliar_links` compara o `playlist.txt` atual com os arquivos já
+renderizados e apaga na hora qualquer `.mp3` que saiu da lista, sem
+precisar de nenhum passo manual (opção 6 — Limpar Registros é só para
+o `sync_state.json`, não afeta isso). Isso só acontece pra playlist(s)
+selecionada(s) naquele Sync — se você tirar uma música de uma playlist
+e sincronizar só outra, a pasta da primeira só atualiza quando você
+rodar o Sync nela (ou escolher "Todas").
+
+Já a remoção do pool tem uma trava de segurança: se muitas músicas
+forem sair do disco de uma vez, o Sync pede confirmação antes de
+apagar.
+
 ## 5. Cookies do YouTube
 
 Necessário para o `yt-dlp` conseguir baixar.
