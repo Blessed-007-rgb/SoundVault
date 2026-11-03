@@ -105,7 +105,13 @@ def main():
                 # CLI derrubava com traceback cru e o .bat mostrava "ERRO FATAL".
                 print("\n  Operação interrompida pelo usuário.")
                 log.warning(f"Operação CLI {args} interrompida via Ctrl+C")
-            input("\n  Pressione Enter para fechar...")
+            try:
+                input("\n  Pressione Enter para fechar...")
+            except EOFError:
+                # Sem terminal interativo (tarefa agendada, pipe, CI): não há
+                # ninguém pra apertar Enter. Antes isto virava "ERRO FATAL" e
+                # gravava crash.log mesmo com o Sync concluído sem problemas.
+                pass
 
     except KeyboardInterrupt:
         # Rede de segurança: qualquer Ctrl+C que escape dos tratamentos
