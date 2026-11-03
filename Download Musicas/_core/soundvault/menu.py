@@ -110,6 +110,65 @@ def escolher_playlist(permitir_todas: bool = True) -> str | None:
     return None if escolhida == "Todas" else escolhida
 
 
+def escolher_preset(permitir_manter: bool = True) -> str | None:
+    """
+    Pergunta qual EQ aplicar. Retorna o id do preset escolhido, None se a
+    escolha foi "manter o preset atual de cada playlist", ou a sentinela
+    "__cancelar__" (0 / entrada inválida).
+    """
+    ids = list(eq_presets.PRESETS.keys())
+    opcoes: list[tuple[str, str | None]] = []
+    if permitir_manter:
+        opcoes.append(("Manter o preset atual de cada playlist", None))
+    opcoes += [(eq_presets.PRESETS[pid]["label"], pid) for pid in ids]
+
+    if RICH_OK:
+        t = Table(box=box.SIMPLE, show_header=False)
+        t.add_column(style="bold cyan", width=4)
+        t.add_column()
+        for i, (rotulo, _) in enumerate(opcoes, 1):
+            t.add_row(str(i), rotulo)
+        t.add_row("0", "[dim]Cancelar[/]")
+        console.print(t)
+        escolha = Prompt.ask("  Qual EQ aplicar", choices=["0"] + [str(i) for i in range(1, len(opcoes) + 1)], default="1")
+    else:
+        for i, (rotulo, _) in enumerate(opcoes, 1):
+            print(f"  {i} - {rotulo}")
+        escolha = input("Qual EQ aplicar (0 pra cancelar): ").strip()
+
+    try:
+        idx = int(escolha) - 1
+    except ValueError:
+        return "__cancelar__"
+    if not (0 <= idx < len(opcoes)):
+        return "__cancelar__"
+    return opcoes[idx][1]
+
+
+def _confirmar(pergunta: str) -> bool:
+    """Confirmação S/N com padrão Não (para ações que alteram vários dados)."""
+    if RICH_OK:
+        return Prompt.ask(f"  {pergunta}", choices=["S", "s", "N", "n"], default="N").upper() == "S"
+    return input(f"{pergunta} [s/N]: ").strip().upper() == "S"
+
+
+def reaplicar_audio_interativo():
+    """Fluxo da opção 'Reaplicar Áudio': escolhe a playlist e qual EQ aplicar."""
+    alvo = escolher_playlist()
+    if alvo == "__cancelar__":
+        return
+    preset = escolher_preset()
+    if preset == "__cancelar__":
+        return
+    if preset is not None and alvo is None:
+        rotulo = eq_presets.PRESETS[preset]["label"]
+        n = len(playlists.listar_playlists())
+        if not _confirmar(f"Isso muda o preset salvo de TODAS as {n} playlists para '{rotulo}'. Continuar?"):
+            cprint("[yellow]Cancelado — nada foi alterado.[/]" if RICH_OK else "Cancelado.")
+            return
+    reaplicar_audio(alvo, preset)
+
+
 def gerenciar_playlists():
     while True:
         os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
@@ -264,7 +323,7 @@ def mostrar_help():
         t2.add_row("5 · Verificar Biblioteca", "Use para checar se tudo está em ordem.\nCompara playlist.txt × registros × arquivos no disco.")
         t2.add_row("6 · Limpar Registros", "Use quando deletar músicas manualmente do disco.\nRemove os registros delas — o próximo Sync vai rebaixar.")
         t2.add_row("7 · Verificar Cache", "Use se o Sync mostrar músicas sem URL.\nValida o playlist_cache.json e aponta entradas problemáticas.")
-        t2.add_row("8 · Reaplicar Áudio", "Use após mudar preset de uma playlist ou o código de EQ.\nRe-renderiza as playlists existentes com o preset de cada uma.")
+        t2.add_row("8 · Reaplicar Áudio", "Use após mudar preset de uma playlist ou o código de EQ.\nEscolha a playlist (ou todas) e o EQ: mantém o atual ou troca na hora.")
         t2.add_row("9 · Corrigir Metadados", "Use se músicas aparecerem sem nome/artista no player.\nRegrava título, artista e capa em todos os .mp3.")
         t2.add_row("E · Configurar EQ", "Use pra mudar o preset de som de uma playlist.\nPadrão, Fone de Ouvido, Caixa de Som ou Som Automotivo.")
         t2.add_row("U · Adicionar URL Manual", "Use quando a busca automática não achou a música.\nCole o link do YouTube de cada uma; depois rode Sync.")
@@ -300,7 +359,7 @@ MENU = [
     ("5", "Verificar Biblioteca",   "Compara playlist vs registros vs disco"),
     ("6", "Limpar Registros",       "Remove registros de músicas que não existem mais no disco"),
     ("7", "Verificar Cache",        "Verifica integridade do playlist_cache.json"),
-    ("8", "Reaplicar Áudio",        "Re-renderiza todas as playlists com o preset de cada uma"),
+    ("8", "Reaplicar Áudio",        "Escolhe a playlist e qual EQ aplicar, e re-renderiza"),
     ("9", "Corrigir Metadados",     "Grava título, artista e capa nos .mp3 existentes"),
     ("E", "Configurar EQ",          "Escolhe o preset de EQ/loudness de uma playlist"),
     ("U", "Adicionar URL Manual",   "Cola o link do YouTube de músicas não encontradas"),
@@ -424,7 +483,7 @@ def menu():
                     auditoria(alvo)
             elif opcao == "6": clean()
             elif opcao == "7": exibir_validacao_cache()
-            elif opcao == "8": reaplicar_audio()
+            elif opcao == "8": reaplicar_audio_interativo()
             elif opcao == "9": fix_tags()
             elif opcao == "E": configurar_eq()
             elif opcao == "U": definir_url_manual()

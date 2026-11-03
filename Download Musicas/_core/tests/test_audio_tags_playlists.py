@@ -170,3 +170,99 @@ class TestPlaylists:
         playlists._salvar_render_state("T", {"a": 1})
         assert playlists.ler_preset("T") == "fone"
         assert not list((config.BASE_DIR / "playlists" / "T").glob("*.tmp"))
+
+
+class TestReaplicarAudio:
+    @pytest.fixture
+    def chamadas(self, perfil, monkeypatch):
+        from soundvault import rebuild
+        for nome in ("Treino", "Sertanejo", "Sex"):
+            playlists.criar_playlist(nome)
+        vistas = []
+        monkeypatch.setattr(playlists, "reconciliar_links", lambda n: (vistas.append(n) or (1, 0, [])))
+        monkeypatch.setattr(rebuild.os, "system", lambda *a: 0)
+        monkeypatch.setattr("shutil.which", lambda *_: "ffmpeg")
+        return rebuild, vistas
+
+    def test_so_a_playlist_escolhida(self, chamadas):
+        rebuild, vistas = chamadas
+        rebuild.reaplicar_audio("Sertanejo")
+        assert vistas == ["Sertanejo"]
+
+    def test_sem_argumento_roda_todas(self, chamadas):
+        rebuild, vistas = chamadas
+        rebuild.reaplicar_audio()
+        assert sorted(vistas) == ["Sertanejo", "Sex", "Treino"]
+
+    def test_playlist_inexistente_nao_roda_nada(self, chamadas):
+        rebuild, vistas = chamadas
+        rebuild.reaplicar_audio("NaoExiste")
+        assert vistas == []
+
+    def test_preset_escolhido_e_salvo_so_na_playlist_alvo(self, chamadas):
+        rebuild, vistas = chamadas
+        rebuild.reaplicar_audio("Sertanejo", "carro")
+        assert vistas == ["Sertanejo"]
+        assert playlists.ler_preset("Sertanejo") == "carro"
+        assert playlists.ler_preset("Treino") == eq_presets.PRESET_PADRAO  # intacta
+
+    def test_preset_em_todas_as_playlists(self, chamadas):
+        rebuild, vistas = chamadas
+        rebuild.reaplicar_audio(None, "fone")
+        assert {playlists.ler_preset(n) for n in ("Treino", "Sertanejo", "Sex")} == {"fone"}
+        assert sorted(vistas) == ["Sertanejo", "Sex", "Treino"]
+
+    def test_sem_preset_mantem_o_de_cada_playlist(self, chamadas):
+        rebuild, vistas = chamadas
+        playlists.definir_preset("Treino", "fone")
+        playlists.definir_preset("Sex", "caixa")
+        rebuild.reaplicar_audio()
+        assert playlists.ler_preset("Treino") == "fone" and playlists.ler_preset("Sex") == "caixa"
+
+    def test_preset_invalido_nao_altera_nada(self, chamadas):
+        rebuild, vistas = chamadas
+        rebuild.reaplicar_audio("Treino", "nao_existe")
+        assert vistas == [] and playlists.ler_preset("Treino") == eq_presets.PRESET_PADRAO
+
+
+class TestMenuReaplicar:
+    @staticmethod
+    def _resposta(monkeypatch, menu, valor):
+        import types
+        monkeypatch.setattr(menu, "Prompt", types.SimpleNamespace(ask=lambda *a, **k: valor))
+
+    def test_escolher_preset_mapeia_as_opcoes(self, monkeypatch):
+        from soundvault import menu
+        ids = list(eq_presets.PRESETS)
+        self._resposta(monkeypatch, menu, "1")
+        assert menu.escolher_preset() is None                       # manter o atual
+        self._resposta(monkeypatch, menu, "2")
+        assert menu.escolher_preset() == ids[0]                     # 1º preset real
+        self._resposta(monkeypatch, menu, str(len(ids) + 1))
+        assert menu.escolher_preset() == ids[-1]                    # último
+        self._resposta(monkeypatch, menu, "0")
+        assert menu.escolher_preset() == "__cancelar__"
+
+    def _fluxo(self, monkeypatch, alvo, preset, confirma):
+        from soundvault import menu
+        chamadas = []
+        monkeypatch.setattr(menu, "escolher_playlist", lambda *a, **k: alvo)
+        monkeypatch.setattr(menu, "escolher_preset", lambda *a, **k: preset)
+        monkeypatch.setattr(menu, "_confirmar", lambda *_: confirma)
+        monkeypatch.setattr(menu, "reaplicar_audio", lambda a, p: chamadas.append((a, p)))
+        menu.reaplicar_audio_interativo()
+        return chamadas
+
+    def test_uma_playlist_com_preset_nao_pede_confirmacao(self, monkeypatch, perfil):
+        assert self._fluxo(monkeypatch, "Treino", "carro", confirma=False) == [("Treino", "carro")]
+
+    def test_todas_com_preset_exige_confirmacao(self, monkeypatch, perfil):
+        assert self._fluxo(monkeypatch, None, "carro", confirma=False) == []
+        assert self._fluxo(monkeypatch, None, "carro", confirma=True) == [(None, "carro")]
+
+    def test_todas_mantendo_o_atual_nao_precisa_confirmar(self, monkeypatch, perfil):
+        assert self._fluxo(monkeypatch, None, None, confirma=False) == [(None, None)]
+
+    def test_cancelar_em_qualquer_etapa(self, monkeypatch, perfil):
+        assert self._fluxo(monkeypatch, "__cancelar__", None, confirma=True) == []
+        assert self._fluxo(monkeypatch, "Treino", "__cancelar__", confirma=True) == []

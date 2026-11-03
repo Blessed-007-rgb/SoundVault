@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 
-from . import config
+from . import config, eq_presets
 from .console_log import console, RICH_OK, cprint, log, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, box
 from .playlist import parsear, nome_arquivo, sanitizar, calcular_md5, detectar_colisoes, MUTAGEN_OK
 from . import playlists
@@ -127,10 +127,16 @@ def fix_tags():
         print(f"\nOK: {ok}")
 
 
-def reaplicar_audio():
+def reaplicar_audio(nome_playlist: str | None = None, preset_id: str | None = None):
     """
-    Re-renderiza todas as playlists do perfil com o preset de EQ/loudness
-    de cada uma. A marca de perfil gravada em cada MP3 renderizado já
+    Re-renderiza as playlists do perfil com o preset de EQ/loudness — só a
+    playlist `nome_playlist`, ou todas quando for None.
+
+    `preset_id` escolhe QUAL EQ aplicar: um id de eq_presets.PRESETS é salvo
+    como o preset de cada playlist alvo (igual à opção "Configurar EQ") e
+    aplicado em seguida; None mantém o preset que cada playlist já tem.
+
+    A marca de perfil gravada em cada MP3 renderizado já
     reflete o preset e a receita de EQ atuais (ver audio.perfil_atual),
     então isso naturalmente pula o que não mudou e só reprocessa o que
     precisa — preset trocado numa playlist, ou mudança na receita de EQ
@@ -141,10 +147,29 @@ def reaplicar_audio():
     if not shutil.which("ffmpeg"):
         cprint("[red]FFmpeg não encontrado no PATH.[/]")
         return
-    nomes = playlists.listar_playlists()
+    if preset_id is not None and not eq_presets.preset_valido(preset_id):
+        cprint(f"[red]Preset desconhecido: {preset_id}[/]" if RICH_OK else f"Preset desconhecido: {preset_id}")
+        return
+    existentes = playlists.listar_playlists()
+    if nome_playlist is not None:
+        if nome_playlist not in existentes:
+            cprint(f"[red]Playlist '{nome_playlist}' não encontrada.[/]" if RICH_OK else f"Playlist '{nome_playlist}' nao encontrada.")
+            return
+        nomes = [nome_playlist]
+    else:
+        nomes = existentes
     if not nomes:
         cprint("[yellow]Nenhuma playlist encontrada.[/]")
         return
+
+    if preset_id is not None:
+        trocadas = [n for n in nomes if playlists.ler_preset(n) != preset_id]
+        for n in trocadas:
+            playlists.definir_preset(n, preset_id)
+        rotulo = eq_presets.PRESETS[preset_id]["label"]
+        log.info(f"Reaplicar áudio — preset '{preset_id}' definido em {len(trocadas)} playlist(s): {', '.join(trocadas) or '-'}")
+        cprint(f"[cyan]EQ '{rotulo}': {len(trocadas)} playlist(s) mudaram de preset, {len(nomes) - len(trocadas)} já usavam.[/]"
+               if RICH_OK else f"EQ {rotulo}: {len(trocadas)} playlist(s) mudaram de preset.")
 
     total_criados, total_removidos, total_faltando = 0, 0, 0
 
