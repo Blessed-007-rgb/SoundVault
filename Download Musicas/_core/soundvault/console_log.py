@@ -22,7 +22,7 @@ try:
     from rich.console import Console, Group  # noqa: F401  (reexportados pros outros módulos)
     from rich.table import Table  # noqa: F401
     from rich.panel import Panel  # noqa: F401
-    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn  # noqa: F401
+    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TimeRemainingColumn, TextColumn  # noqa: F401
     from rich.prompt import Prompt  # noqa: F401
     from rich.text import Text  # noqa: F401
     from rich import box  # noqa: F401
@@ -39,7 +39,7 @@ except ImportError:
             raise RuntimeError("O pacote 'rich' não está instalado (pip install rich).")
 
     Console = Group = Table = Panel = Progress = SpinnerColumn = _SemRich  # type: ignore
-    BarColumn = MofNCompleteColumn = TimeElapsedColumn = TextColumn = _SemRich  # type: ignore
+    BarColumn = MofNCompleteColumn = TimeElapsedColumn = TimeRemainingColumn = TextColumn = _SemRich  # type: ignore
     Prompt = Text = box = _SemRich  # type: ignore
 
 from . import config

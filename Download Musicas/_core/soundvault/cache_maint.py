@@ -3,8 +3,8 @@ import re
 from . import config
 from .console_log import console, RICH_OK, cprint, log, Table, Panel, box
 from .storage import carregar_falhas, carregar_cache, _escrever_json_atomico
-from .search import buscar_ytmusic
-from .playlist import extrair_video_id, classificar_erro
+from .search import buscar_ytmusic_detalhado, entrada_de_busca, SCORE_REVISAO
+from .playlist import extrair_video_id, classificar_erro, nome_arquivo, parsear
 
 
 
@@ -25,9 +25,10 @@ def atualizar_urls_mortas(cache: dict, playlist: list) -> int:
         # ficava de fora e nunca era re-buscada.
         if classificar_erro(str(falhas[nome])) not in ("permanent", "format"):
             continue
-        nova_url = buscar_ytmusic(nome)
-        if nova_url and nova_url != cache.get(nome, {}).get("url", ""):
-            cache[nome] = {"url": nova_url, "id": extrair_video_id(nova_url)}
+        det = buscar_ytmusic_detalhado(nome)
+        nova_url = det["url"] if det else None
+        if det and nova_url != cache.get(nome, {}).get("url", ""):
+            cache[nome] = entrada_de_busca(det, cache.get(nome))
             atualizados += 1
             log.info(f"[CACHE] URL morta substituída: {nome} → {nova_url}")
     if atualizados:
@@ -103,7 +104,7 @@ def definir_url_manual():
             continue
 
         url = f"https://www.youtube.com/watch?v={vid}"
-        salvar_cache_entrada(nome, {"url": url, "id": vid})
+        salvar_cache_entrada(nome, {"url": url, "id": vid, "origem": "manual", "revisado": True})
         # Remove o skip antigo (o vídeo velho está indisponível) pra o Sync retentar com a URL nova.
         for k in [k for k, v in state.items() if isinstance(v, dict) and v.get("skipped") and v.get("name") == nome]:
             del state[k]
@@ -113,6 +114,119 @@ def definir_url_manual():
         nomes.remove(nome)
 
     cprint("[green]Todas resolvidas — rode o Sync (1) para baixar.[/]" if RICH_OK else "Todas resolvidas.")
+
+
+def pendentes_de_revisao(cache: dict, incluir_todas: bool = False) -> list[tuple[str, dict]]:
+    """URLs achadas automaticamente (auto=True) que ainda não foram revisadas, da
+    menos para a mais confiável. Por padrão só as com score abaixo de SCORE_REVISAO."""
+    achadas = []
+    for nome, d in cache.items():
+        if not isinstance(d, dict) or not d.get("auto") or d.get("revisado") or not d.get("url"):
+            continue
+        if incluir_todas or float(d.get("score", 0)) < SCORE_REVISAO:
+            achadas.append((nome, d))
+    return sorted(achadas, key=lambda par: float(par[1].get("score", 0)))
+
+
+def _descartar_download(nome: str) -> int:
+    """Remove o MP3 do pool, o registro no sync_state e os renders de todas as
+    playlists de uma música cuja URL foi rejeitada. Devolve quantos itens saíram."""
+    from . import playlists
+    from .storage import carregar_state, salvar_state
+
+    removidos = 0
+    arq = config.DOWNLOAD_DIR / f"{nome_arquivo(*parsear(nome))}.mp3"
+    if arq.exists():
+        arq.unlink()
+        removidos += 1
+    state = carregar_state()
+    chaves = [k for k, v in state.items() if isinstance(v, dict) and v.get("name") == nome]
+    for k in chaves:
+        del state[k]
+    if chaves:
+        salvar_state(state)
+        removidos += len(chaves)
+    return removidos + playlists.invalidar_render(nome)
+
+
+def _perguntar(texto: str) -> str | None:
+    try:
+        return input(texto).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+
+def revisar_urls_automaticas(incluir_todas: bool = False):
+    """
+    Fila de revisão: mostra, uma a uma, as URLs que a busca automática achou com
+    pouca confiança. Para cada uma: aceitar, rejeitar (descarta o download e busca
+    outro vídeo no próximo Sync), colar outra URL, pular ou sair.
+    """
+    from .storage import salvar_cache_entrada
+
+    fila = pendentes_de_revisao(carregar_cache(), incluir_todas)
+    if not fila:
+        cprint("[green]✓ Nenhuma URL pendente de revisão.[/]" if RICH_OK else "Nenhuma URL pendente de revisao.")
+        return
+    total = len(fila)
+    cprint(f"[bold]{total} URL(s) pra revisar[/] [dim](da menos para a mais confiável)[/]" if RICH_OK else f"{total} URL(s) pra revisar")
+
+    for i, (nome, d) in enumerate(fila, 1):
+        print()
+        if RICH_OK:
+            cprint(f"[bold cyan][{i}/{total}][/] Pedido:  [white]{nome}[/]")
+            cprint(f"         Achado:  [yellow]{d.get('video', '?')}[/]  [dim](confiança {d.get('score', '?')})[/]")
+            cprint(f"         Link:    {d['url']}")
+        else:
+            print(f"[{i}/{total}] Pedido: {nome}")
+            print(f"  Achado: {d.get('video', '?')} (confianca {d.get('score', '?')})")
+            print(f"  Link: {d['url']}")
+        resp = _perguntar("  [Enter] aceitar · [r] rejeitar · [u] colar outra URL · [p] pular · [q] sair > ")
+        if resp is None or resp.lower() == "q":
+            return
+        resp = resp.lower()
+        if resp == "p":
+            continue
+        if resp == "":
+            salvar_cache_entrada(nome, {**d, "revisado": True})
+            log.info(f"[REVISAO] aceita: {nome} -> {d['url']}")
+            continue
+
+        novo_id = ""
+        if resp == "u":
+            entrada = _perguntar("  Cole a URL (ou o ID do vídeo) > ")
+            if entrada is None:
+                return
+            novo_id = _extrair_id_manual(entrada)
+            if not novo_id:
+                cprint("[red]  URL/ID não reconhecido — pulando.[/]" if RICH_OK else "  URL invalida - pulando.")
+                continue
+            if novo_id == d.get("id"):
+                salvar_cache_entrada(nome, {**d, "revisado": True})
+                continue
+        elif resp != "r":
+            cprint("[yellow]  Opção não reconhecida — pulando.[/]" if RICH_OK else "  Opcao nao reconhecida - pulando.")
+            continue
+
+        arq = config.DOWNLOAD_DIR / f"{nome_arquivo(*parsear(nome))}.mp3"
+        if arq.exists():
+            c = _perguntar("  Isso apaga o MP3 já baixado dessa música (e os renders). Confirmar? [s/N] > ")
+            if c is None:
+                return
+            if c.lower() != "s":
+                cprint("[yellow]  Mantido — nada foi alterado.[/]" if RICH_OK else "  Mantido.")
+                continue
+        _descartar_download(nome)
+        rejeitados = list(dict.fromkeys([*(d.get("rejeitados") or []), d.get("id", "")]))
+        rejeitados = [r for r in rejeitados if r]
+        if resp == "u":
+            salvar_cache_entrada(nome, {"url": f"https://www.youtube.com/watch?v={novo_id}", "id": novo_id,
+                                        "origem": "manual", "revisado": True, "rejeitados": rejeitados})
+            cprint("[green]  ✓ URL trocada — rode o Sync pra baixar.[/]" if RICH_OK else "  URL trocada - rode o Sync.")
+        else:
+            salvar_cache_entrada(nome, {"url": "", "id": "", "rejeitados": rejeitados})
+            cprint("[green]  ✓ Rejeitada — o próximo Sync busca outro vídeo.[/]" if RICH_OK else "  Rejeitada - o proximo Sync busca outro video.")
+        log.info(f"[REVISAO] {'URL manual' if resp == 'u' else 'rejeitada'}: {nome} (antes: {d['url']})")
 
 
 def validar_cache(cache: dict) -> dict:
@@ -133,7 +247,8 @@ def validar_cache(cache: dict) -> dict:
         vid = dados.get("id", "")
         if not url:
             sem_url.append(nome)
-        elif not url_pattern.match(url):
+        elif not url_pattern.match(url) or not extrair_video_id(url):
+            # domínio errado OU ID de vídeo que não tem exatamente 11 caracteres
             url_invalida.append((nome, url))
         if vid and not id_pattern.match(vid):
             id_invalido.append((nome, vid))

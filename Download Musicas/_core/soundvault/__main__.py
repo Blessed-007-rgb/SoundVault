@@ -68,6 +68,16 @@ def main():
             nome_playlist_cli = args[idx2 + 1]
             args = [a for i, a in enumerate(args) if i != idx2 and i != idx2 + 1]
 
+        nome_navegador_cli = None
+        if "--cookies-browser" in args:
+            idx3 = args.index("--cookies-browser")
+            if idx3 + 1 >= len(args) or args[idx3 + 1].startswith("--"):
+                print("Uso: --cookies-browser NAVEGADOR   (firefox, chrome, edge, brave, opera, vivaldi, chromium, whale; ou 'nenhum')")
+                sys.exit(1)
+            nome_navegador_cli = args[idx3 + 1]
+            args = [a for i, a in enumerate(args) if i != idx3 and i != idx3 + 1]
+            args = args or ["--cookies-browser"]  # mantém no ramo de CLI abaixo
+
         if not args:
             from .menu import menu
             menu()
@@ -77,8 +87,10 @@ def main():
             from .rebuild import rebuild, fix_tags
             from .dedupe import clean, limpar_duplicatas, limpar_duplicatas_playlist
             from .menu import resetar_skips_copyright, mostrar_help
-            from .cache_maint import exibir_validacao_cache
+            from .cache_maint import exibir_validacao_cache, revisar_urls_automaticas
+            from .doctor import diagnosticar
 
+            codigo_saida = 0
             try:
                 if   "--sync"          in args: sincronizar(nome_playlist_cli)
                 elif "--retry"         in args: sincronizar(nome_playlist_cli, apenas_falhas=True)
@@ -94,6 +106,11 @@ def main():
                     limpar_duplicatas_playlist(nome_playlist_cli)
                 elif "--reset-puladas" in args: resetar_skips_copyright()
                 elif "--validate"      in args: exibir_validacao_cache()
+                elif "--review-urls"   in args: revisar_urls_automaticas()
+                elif "--cookies-browser" in args:
+                    from .cookies import configurar_cookies_navegador
+                    codigo_saida = configurar_cookies_navegador(nome_navegador_cli or "")
+                elif "--doctor"        in args: codigo_saida = diagnosticar(rede="--offline" not in args)
                 elif "--help"          in args: mostrar_help()
                 else:
                     print(f"Opção desconhecida: {args}")
@@ -112,6 +129,8 @@ def main():
                 # ninguém pra apertar Enter. Antes isto virava "ERRO FATAL" e
                 # gravava crash.log mesmo com o Sync concluído sem problemas.
                 pass
+            if codigo_saida:
+                sys.exit(codigo_saida)  # --doctor devolve 1 quando acha erro (útil em scripts)
 
     except KeyboardInterrupt:
         # Rede de segurança: qualquer Ctrl+C que escape dos tratamentos

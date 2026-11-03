@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 
 from . import config
 from .playlist import parsear
+from .procutil import ytdlp_js_params
 from .storage import carregar_cache
 from .console_log import log
 
@@ -111,9 +112,14 @@ def _pontuar_candidato(artista: str, titulo: str, entry: Mapping[str, Any]) -> f
     return max(0.0, min(100.0, score))
 
 
-def buscar_ytmusic(chave: str) -> str | None:
+# Abaixo disto a URL achada automaticamente entra na fila de revisão (menu "V").
+SCORE_REVISAO = 80.0
+
+
+def buscar_ytmusic_detalhado(chave: str) -> dict[str, Any] | None:
     """
-    Busca URL no YouTube para músicas sem URL no cache.
+    Busca URL no YouTube para músicas sem URL no cache. Devolve
+    {"url", "id", "score", "video"} do melhor candidato, ou None.
     Usa ytsearch (suportado por todas as versões do yt-dlp), tentando
     queries progressivamente mais amplas, e pontua cada candidato por
     similaridade de título/artista — evita baixar a música errada (cover,
@@ -131,11 +137,11 @@ def buscar_ytmusic(chave: str) -> str | None:
         f"ytsearch5:{titulo} {_separar_artistas(artista)[0]}",
         f"ytsearch5:{titulo}",
     ]
-    opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "extract_flat": True}
-    if config.COOKIES_FILE.exists():
-        opts["cookiefile"] = str(config.COOKIES_FILE)
+    opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "extract_flat": True, **ytdlp_js_params()}
+    opts.update(config.cookies_params())
 
     melhor_url = None
+    melhor_id = ""
     melhor_score = -1.0
     melhor_titulo_video = ""
 
@@ -145,9 +151,15 @@ def buscar_ytmusic(chave: str) -> str | None:
     # aceitos — são variantes do mesmo nome (ex.: lista de artistas diferente).
     titulo_norm_pedido = _normalizar(titulo)
     ocupados: dict[str, str] = {}
+    rejeitados: set[str] = set()
     try:
         for nome_c, dados_c in carregar_cache().items():
-            if nome_c != chave and isinstance(dados_c, dict) and dados_c.get("id"):
+            if not isinstance(dados_c, dict):
+                continue
+            if nome_c == chave:
+                # vídeos que o usuário já rejeitou na revisão para ESTA música
+                rejeitados.update(dados_c.get("rejeitados") or [])
+            elif dados_c.get("id"):
                 ocupados[dados_c["id"]] = nome_c
     except Exception as e:
         log.debug(f"buscar_ytmusic: não foi possível ler o cache de IDs ocupados: {e}")
@@ -167,7 +179,7 @@ def buscar_ytmusic(chave: str) -> str | None:
             # `or ""`: em resultados "flat" o campo pode existir com valor None,
             # e None.lower() derrubava o Sync inteiro (fora de qualquer try).
             uploader = (entry.get("uploader") or entry.get("channel") or "").lower()
-            if not vid or "vevo" in uploader:
+            if not vid or "vevo" in uploader or vid in rejeitados:
                 continue
             dono = ocupados.get(vid)
             if dono and _normalizar(parsear(dono)[1]) != titulo_norm_pedido:
@@ -177,6 +189,7 @@ def buscar_ytmusic(chave: str) -> str | None:
             if score is not None and score > melhor_score:
                 melhor_score = score
                 melhor_url = f"https://www.youtube.com/watch?v={vid}"
+                melhor_id = vid
                 melhor_titulo_video = entry.get("title", "")
 
         if melhor_score >= SCORE_BOM_O_SUFICIENTE:
@@ -187,7 +200,26 @@ def buscar_ytmusic(chave: str) -> str | None:
             f"buscar_ytmusic: '{chave}' -> {melhor_url} "
             f"(score {melhor_score:.0f}, video '{melhor_titulo_video}')"
         )
-        return melhor_url
+        return {"url": melhor_url, "id": melhor_id, "score": round(melhor_score, 1), "video": melhor_titulo_video}
 
     log.warning(f"buscar_ytmusic: nenhum candidato confiável encontrado para '{chave}'")
     return None
+
+
+def buscar_ytmusic(chave: str) -> str | None:
+    """Só a URL do melhor candidato (compatibilidade); veja buscar_ytmusic_detalhado."""
+    det = buscar_ytmusic_detalhado(chave)
+    return det["url"] if det else None
+
+
+def entrada_de_busca(det: dict[str, Any], anterior: Any = None) -> dict[str, Any]:
+    """Entrada do playlist_cache.json para uma URL achada automaticamente.
+    Guarda score e título do vídeo pra fila de revisão e preserva os vídeos
+    já rejeitados pelo usuário para esta música."""
+    entrada: dict[str, Any] = {
+        "url": det["url"], "id": det["id"],
+        "auto": True, "score": det["score"], "video": det["video"],
+    }
+    if isinstance(anterior, dict) and anterior.get("rejeitados"):
+        entrada["rejeitados"] = list(anterior["rejeitados"])
+    return entrada

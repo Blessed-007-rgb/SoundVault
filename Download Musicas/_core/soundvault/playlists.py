@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -120,6 +121,25 @@ def _salvar_render_state(nome: str, state: dict):
     _escrever_json_atomico(caminho, state)
 
 
+def invalidar_render(chave: str) -> int:
+    """Esquece o render de `chave` em TODAS as playlists: apaga o MP3 renderizado
+    e a entrada do render_state, pra o próximo Sync renderizar de novo a partir
+    do pool. Usado quando o áudio de origem foi descartado (ex.: URL rejeitada na
+    revisão). Devolve quantas playlists tinham render dessa música."""
+    afetadas = 0
+    for nome in listar_playlists():
+        estado = _ler_render_state(nome)
+        entrada = estado.pop(chave, None)
+        if entrada is None:
+            continue
+        arq = caminho_playlist_musicas(nome) / str(entrada.get("file", ""))
+        if entrada.get("file") and arq.is_file():
+            arq.unlink(missing_ok=True)
+        _salvar_render_state(nome, estado)
+        afetadas += 1
+    return afetadas
+
+
 def remover_playlist(nome: str):
     """Remove a pasta da playlist (playlist.txt + os hardlinks/cópias em
     Musicas\\). NÃO mexe no pool central (Main\\Musicas\\) — a limpeza
@@ -221,7 +241,7 @@ def ordem_round_robin(playlist: list[str]) -> list[str]:
     return resultado
 
 
-def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
+def reconciliar_links(nome: str, ao_progredir: Callable[[int, int], None] | None = None) -> tuple[int, int, list[str]]:
     """
     Garante que playlists\\<nome>\\Musicas\\ tem exatamente um arquivo por
     música do playlist.txt dessa playlist, renderizado com o preset de EQ
@@ -305,6 +325,10 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
     # aproveita a CPU que ficava ociosa no loop serial. O render_state só é
     # alterado aqui na thread principal, conforme os jobs terminam.
     if a_renderizar:
+        total_render = len(a_renderizar)
+        feitos = 0
+        if ao_progredir:
+            ao_progredir(0, total_render)
         n_workers = max(1, min(config.RENDER_WORKERS, len(a_renderizar)))
         ex = ThreadPoolExecutor(max_workers=n_workers)
         try:
@@ -319,6 +343,9 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
                 except Exception as e:
                     log.warning(f"reconciliar_links: render de '{chave}' falhou: {e}")
                     ok = False
+                feitos += 1
+                if ao_progredir:
+                    ao_progredir(feitos, total_render)
                 if ok:
                     render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
                     criados += 1

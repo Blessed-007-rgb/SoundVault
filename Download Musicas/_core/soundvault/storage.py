@@ -110,6 +110,10 @@ def normalizar_entrada_cache(dados) -> dict | None:
         return None
     vid = extrair_video_id(str(dados.get("url", "")))
     if not vid:
+        # Música rejeitada na revisão: sem URL, mas guardando os vídeos já
+        # descartados pra a próxima busca não repetir o mesmo.
+        if dados.get("url", None) == "" and dados.get("rejeitados"):
+            return {**dados, "id": ""}
         return None
     return {**dados, "id": vid}
 
@@ -137,6 +141,9 @@ def salvar_cache_entrada(chave: str, dados: dict) -> bool:
         return False
     with _cache_lock:
         cache = carregar_cache()
+        antigo = cache.get(chave)
+        if isinstance(antigo, dict) and antigo.get("rejeitados") and "rejeitados" not in normalizada:
+            normalizada["rejeitados"] = antigo["rejeitados"]
         cache[chave] = normalizada
         _escrever_json_atomico(config.CACHE_FILE, cache)
     return True

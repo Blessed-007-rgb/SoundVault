@@ -23,12 +23,24 @@ python --version
 ### 1.2 Dependências Python
 
 ```
-pip install -U yt-dlp rich mutagen
+pip install -U -r requirements.txt
 ```
 
-- `yt-dlp` → faz os downloads do YouTube
+- `yt-dlp[default]` → faz os downloads do YouTube (a variante `[default]` traz o
+  `yt-dlp-ejs`, que resolve os desafios de JavaScript do YouTube)
 - `rich` → interface visual do menu
-- `mutagen` → grava metadados nos MP3
+- `mutagen` → grava metadados e capa nos MP3
+- `psutil` → trava que impede duas execuções ao mesmo tempo
+
+Depois de instalar tudo (inclusive FFmpeg e Node.js, abaixo), confira com:
+
+```
+python -m soundvault --doctor
+```
+
+Ele lista o que está faltando (ferramentas, pacotes, espaço em disco, cookie e
+cache) e diz como resolver cada item. Também está no menu, opção **D**. Para
+desenvolver/rodar os testes: `pip install -r requirements-dev.txt`.
 
 ### 1.3 Node.js (obrigatório para o yt-dlp funcionar)
 
@@ -150,6 +162,9 @@ execução.
 | 7 | Verificar Cache | Valida o `playlist_cache.json`: entradas sem URL, URLs inválidas, IDs errados. |
 | 8 | Reaplicar Áudio | Re-renderiza as playlists existentes com o preset de EQ/loudness de cada uma. Use depois de mudar um preset ou o código de EQ. |
 | 9 | Corrigir Metadados | Grava título, artista e capa nos MP3 existentes. |
+| U | Adicionar URL Manual | Cola o link do YouTube de músicas que a busca automática não achou (ou que falharam). |
+| V | Revisar URLs | Lista as URLs que a busca automática achou com **baixa confiança** (menos de 80), da menos para a mais confiável. Para cada uma: aceitar, rejeitar (apaga o download e busca outro vídeo no próximo Sync, sem repetir o rejeitado) ou colar a URL certa. |
+| D | Diagnóstico | Confere ffmpeg, Node.js, pacotes, espaço em disco, cookie e cache, e diz como resolver (`--doctor` na linha de comando). |
 | E | Configurar EQ | Escolhe o preset de EQ/loudness (Padrão, Fone de Ouvido, Caixa de Som ou Som Automotivo) de uma playlist. Pode aplicar na hora ou deixar para o próximo Sync. |
 | P | Resetar Puladas | Lista músicas puladas por copyright/indisponibilidade e libera as escolhidas para retry no próximo Sync. |
 | R | Registrar MP3s do Disco | Importa MP3s existentes que o sistema não conhece; consolida duplicatas no `sync_state.json`. |
@@ -231,6 +246,43 @@ Necessário para o `yt-dlp` conseguir baixar.
 
 Se os downloads começarem a falhar com erro de autenticação, o cookie
 expirou — exporte um novo e substitua o arquivo.
+
+> **Dica:** o YouTube troca os cookies de uma aba normal poucos minutos
+> depois do login, então o arquivo exportado dali "expira" rápido. Exporte
+> de uma **janela anônima**:
+>
+> 1. Abra uma janela anônima e entre no YouTube.
+> 2. Nessa mesma aba, digite `youtube.com/robots.txt` na barra de endereço.
+>    É **só uma página leve** (um texto simples), usada para que a aba não
+>    recarregue e troque os cookies de novo. **Não copie o texto dela.**
+> 3. Clique no ícone da extensão **Get cookies.txt LOCALLY** e use o botão
+>    **Export** — é a extensão que gera o conteúdo certo do arquivo.
+>    *(O Chrome desativa extensões em janela anônima: libere em
+>    `chrome://extensions` → **Detalhes** da extensão → **Permitir no modo de
+>    navegação anônima**. Sem isso o ícone nem aparece.)*
+> 4. Salve como `cookies.txt` (com **s**) na pasta do perfil e feche a janela.
+>
+> **Sem janela anônima:** crie um *perfil separado* do Chrome só para isso
+> (foto de perfil → Adicionar), entre no YouTube nele, exporte uma vez e não
+> use esse perfil para mais nada — sem uso, o YouTube não troca os cookies.
+>
+> Um arquivo de cookies de verdade começa com `# Netscape HTTP Cookie File` e
+> tem uma linha por cookie. Se o `cookies.txt` tiver qualquer outro conteúdo,
+> o SoundVault avisa (no Sync e no `--doctor`) e baixa sem cookies.
+
+**Alternativa sem arquivo:** deixe o `yt-dlp` ler os cookies direto do
+navegador, que se mantém sempre atualizado:
+
+```
+python -m soundvault --cookies-browser firefox
+```
+
+Navegadores aceitos: `firefox`, `chrome`, `edge`, `brave`, `opera`, `vivaldi`,
+`chromium`, `whale`. O comando já testa se funcionou. A escolha vale por
+perfil (fica em `perfil.json`) e tem prioridade sobre o `cookies.txt`; para
+voltar ao arquivo, use `--cookies-browser nenhum`. **Prefira o Firefox**: o
+Chrome e o Edge recentes criptografam os cookies de um jeito que o `yt-dlp`
+muitas vezes não consegue abrir no Windows (e precisam estar fechados).
 
 > `cookies.txt` nunca deve ser commitado — ele contém sua sessão real
 > do YouTube. Já está no `.gitignore`.

@@ -8,10 +8,11 @@ from datetime import datetime
 from . import config, cookies, download
 from .console_log import console, RICH_OK, log, cprint, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, Prompt, box
 from .lock import adquirir_lock, liberar_lock
+from .progresso import barra_de_render
 from .playlist import parsear, nome_arquivo, sanitizar, extrair_video_id
 from . import playlists
 from .storage import carregar_cache, carregar_state, carregar_falhas, salvar_state, salvar_falhas, salvar_historico, salvar_cache_entrada, entrada_cache_valida
-from .search import buscar_ytmusic
+from .search import buscar_ytmusic_detalhado, entrada_de_busca, SCORE_REVISAO
 from .cache_maint import atualizar_urls_mortas, validar_cache
 from .procutil import sem_janela
 
@@ -127,6 +128,11 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
         # gasto tempo/tentativas em várias músicas. Throttled internamente
         # (COOKIE_HEALTH_CHECK_INTERVAL_H) pra não gastar segundos à toa
         # em todo Sync.
+        if cookies.cookies_txt_corrompido():
+            log.warning("[HEALTH] cookies.txt não está no formato de cookies — será ignorado neste Sync")
+            cprint("[bold yellow]⚠  O cookies.txt NÃO é um arquivo de cookies válido[/] — provavelmente foi colado o texto de uma página.\n"
+                   "   Este Sync roda [bold]sem cookies[/]. Exporte de novo com a extensão [cyan]Get cookies.txt LOCALLY[/] (botão Export)."
+                   if RICH_OK else "\n!! cookies.txt invalido (nao e um arquivo de cookies) - o Sync vai rodar sem cookies !!")
         cookie_ok = cookies.verificar_cookie_valido()
         if cookie_ok is False:
             log.warning("[HEALTH] cookies.txt reprovou no teste de autenticação antes do Sync")
@@ -297,13 +303,18 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
             if sem_url:
                 if RICH_OK:
                     console.print(f"[yellow]  ⚠ {len(sem_url)} música(s) sem URL — buscando no YouTube Music...[/]")
+                baixa_confianca = 0
                 for nome in sem_url:
-                    alt = buscar_ytmusic(nome)
+                    det = buscar_ytmusic_detalhado(nome)
+                    alt = det["url"] if det else None
                     if alt:
                         alt_id = extrair_video_id(alt)
-                        pendentes[nome] = {"url": alt, "id": alt_id}
-                        cache[nome] = {"url": alt, "id": alt_id}
-                        salvar_cache_entrada(nome, {"url": alt, "id": alt_id})
+                        entrada = entrada_de_busca(det, cache.get(nome)) if det else {"url": alt, "id": alt_id}
+                        cache[nome] = entrada
+                        pendentes[nome] = entrada
+                        salvar_cache_entrada(nome, entrada)
+                        if det and det["score"] < SCORE_REVISAO:
+                            baixa_confianca += 1
                         if RICH_OK:
                             console.print(f"  [green]✓[/] URL encontrada e salva no cache: [dim]{nome}[/]")
                         log.info(f"[AUTO-URL] {nome} → {alt} (salvo no cache)")
@@ -311,12 +322,16 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
                         if RICH_OK:
                             console.print(f"  [red]✗[/] Não encontrada: [dim]{nome}[/]")
                         log.warning(f"[AUTO-URL] Não encontrada: {nome}")
+                if baixa_confianca:
+                    cprint(f"[yellow]  ⚠ {baixa_confianca} URL(s) achada(s) com baixa confiança — depois do Sync, use a opção V pra revisar.[/]" if RICH_OK
+                           else f"  {baixa_confianca} URL(s) com baixa confianca - use a opcao V para revisar.")
                 pendentes = {n: d for n, d in pendentes.items() if entrada_cache_valida(d)}
 
         if not pendentes:
             cprint("[green]✓ Tudo já está sincronizado![/]")
             for n in alvo_nomes:
-                playlists.reconciliar_links(n)
+                with barra_de_render(f"Equalizando {n}") as cb:
+                    playlists.reconciliar_links(n, cb)
             return
 
         # Bug 20: espera o self-update do yt-dlp terminar (até 35s) antes de
@@ -445,7 +460,8 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
         # está no playlist.txt dela e nada além disso.
         _links_criados, _links_removidos = 0, 0
         for n in alvo_nomes:
-            c, r, _faltando = playlists.reconciliar_links(n)
+            with barra_de_render(f"Equalizando {n}") as cb:
+                c, r, _faltando = playlists.reconciliar_links(n, cb)
             _links_criados += c
             _links_removidos += r
         if RICH_OK and (_links_criados or _links_removidos):

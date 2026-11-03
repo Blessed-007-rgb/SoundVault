@@ -2,9 +2,10 @@ import os
 from datetime import datetime
 
 from . import config, eq_presets
-from .console_log import console, RICH_OK, cprint, log, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, box
+from .console_log import console, RICH_OK, cprint, log, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, box
 from .playlist import parsear, nome_arquivo, sanitizar, calcular_md5, detectar_colisoes, MUTAGEN_OK
 from . import playlists
+from .progresso import barra_de_render
 from .storage import carregar_state, salvar_state
 from .tags import gravar_tags
 
@@ -173,25 +174,16 @@ def reaplicar_audio(nome_playlist: str | None = None, preset_id: str | None = No
 
     total_criados, total_removidos, total_faltando = 0, 0, 0
 
-    def _processar(n):
+    def _processar(n, cb=None):
         nonlocal total_criados, total_removidos, total_faltando
-        criados, removidos, faltando = playlists.reconciliar_links(n)
+        criados, removidos, faltando = playlists.reconciliar_links(n, cb)
         total_criados += criados
         total_removidos += removidos
         total_faltando += len(faltando)
 
-    if RICH_OK:
-        with Progress(
-            SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
-            BarColumn(bar_width=36), MofNCompleteColumn(), TimeElapsedColumn(), console=console,
-        ) as prog:
-            task = prog.add_task("Playlists...", total=len(nomes))
-            for n in nomes:
-                _processar(n)
-                prog.advance(task)
-    else:
-        for n in nomes:
-            _processar(n)
+    for i, n in enumerate(nomes, 1):
+        with barra_de_render(f"Equalizando {n} ({i}/{len(nomes)})") as cb:
+            _processar(n, cb)
 
     log.info(f"Reaplicar áudio — {total_criados} renderizadas, {total_removidos} removidas, {total_faltando} pendentes de download.")
     cor = "green" if total_faltando == 0 else "yellow"

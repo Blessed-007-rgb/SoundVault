@@ -102,3 +102,92 @@ def verificar_dependencias():
             if critico:
                 tudo_ok = False
     return tudo_ok, faltando
+
+
+# ── Cookies: arquivo cookies.txt OU direto de um navegador ──────────────────
+# Alternativa a exportar cookies.txt na mão: o yt-dlp lê os cookies do navegador
+# (--cookies-from-browser). Escolha por perfil via `--cookies-browser NOME` (grava
+# em perfil.json). Firefox é o mais confiável; Chrome/Edge recentes criptografam
+# os cookies de um jeito que o yt-dlp muitas vezes não consegue ler no Windows.
+NAVEGADORES_COOKIES = ("firefox", "chrome", "edge", "brave", "opera", "vivaldi", "chromium", "whale")
+
+
+def arquivo_perfil() -> Path:
+    return BASE_DIR / "perfil.json"
+
+
+def navegador_cookies() -> str | None:
+    """Navegador configurado pra fornecer os cookies, ou None (usa o cookies.txt)."""
+    import json
+    try:
+        nome = json.loads(arquivo_perfil().read_text(encoding="utf-8")).get("cookies_do_navegador")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return nome if nome in NAVEGADORES_COOKIES else None
+
+
+def definir_navegador_cookies(nome: str | None) -> None:
+    """Grava (ou, com None, remove) o navegador de cookies deste perfil."""
+    import json
+    if nome is not None and nome not in NAVEGADORES_COOKIES:
+        raise ValueError(f"Navegador desconhecido: {nome}. Opções: {', '.join(NAVEGADORES_COOKIES)}")
+    arq = arquivo_perfil()
+    try:
+        dados = json.loads(arq.read_text(encoding="utf-8"))
+        if not isinstance(dados, dict):
+            dados = {}
+    except (OSError, ValueError):
+        dados = {}
+    if nome is None:
+        dados.pop("cookies_do_navegador", None)
+    else:
+        dados["cookies_do_navegador"] = nome
+    tmp = arq.with_name(arq.name + ".tmp")
+    tmp.write_text(json.dumps(dados, indent=4, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, arq)
+
+
+_CABECALHOS_COOKIES = ("# Netscape HTTP Cookie File", "# HTTP Cookie File")
+
+
+def cookies_txt_valido() -> bool:
+    """True se COOKIES_FILE é um arquivo de cookies no formato Netscape (o único que
+    o yt-dlp lê): cabeçalho na 1ª linha e ao menos um cookie de 7 colunas separadas
+    por TAB. Barra o erro comum de copiar o TEXTO de uma página (ex.: robots.txt)
+    para dentro do arquivo em vez de exportar com a extensão."""
+    try:
+        with open(COOKIES_FILE, encoding="utf-8", errors="replace") as f:
+            linhas = [linha.rstrip("\r\n") for linha in f]
+    except OSError:
+        return False
+    if not linhas or not linhas[0].startswith(_CABECALHOS_COOKIES):
+        return False
+    # cookies HttpOnly vêm prefixados com "#HttpOnly_" e também contam
+    return any(
+        linha.count("\t") >= 6 and (not linha.startswith("#") or linha.startswith("#HttpOnly_"))
+        for linha in linhas if linha
+    )
+
+
+def _arquivo_cookies_usavel() -> bool:
+    return COOKIES_FILE.exists() and cookies_txt_valido()
+
+
+def cookies_disponiveis() -> bool:
+    return navegador_cookies() is not None or _arquivo_cookies_usavel()
+
+
+def cookies_args() -> list[str]:
+    """Argumentos de CLI do yt-dlp pra autenticar (vazio se não há cookies)."""
+    nav = navegador_cookies()
+    if nav:
+        return ["--cookies-from-browser", nav]
+    return ["--cookies", str(COOKIES_FILE)] if _arquivo_cookies_usavel() else []
+
+
+def cookies_params() -> dict:
+    """Mesma coisa pra API Python do yt-dlp (YoutubeDL(params))."""
+    nav = navegador_cookies()
+    if nav:
+        return {"cookiesfrombrowser": (nav,)}
+    return {"cookiefile": str(COOKIES_FILE)} if _arquivo_cookies_usavel() else {}

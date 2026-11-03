@@ -7,8 +7,10 @@ from .lock import LockError
 from .sync import sincronizar
 from .dedupe import limpar_duplicatas_playlist, limpar_duplicatas, clean
 from .audit import auditoria
-from .cache_maint import exibir_validacao_cache, definir_url_manual
+from .cache_maint import exibir_validacao_cache, definir_url_manual, revisar_urls_automaticas
 from .rebuild import rebuild, fix_tags, reaplicar_audio
+from .doctor import diagnosticar
+from .progresso import barra_de_render
 
 
 
@@ -298,7 +300,8 @@ def configurar_eq():
         aplicar = input("Aplicar agora (S/N)? ").strip().upper()
 
     if aplicar == "S":
-        criados, removidos, faltando = playlists.reconciliar_links(nome_playlist)
+        with barra_de_render(f"Equalizando {nome_playlist}") as cb:
+            criados, removidos, faltando = playlists.reconciliar_links(nome_playlist, cb)
         cprint(f"[green]✓ {criados} renderizada(s), {removidos} removida(s)[/]" if RICH_OK else f"{criados} renderizadas, {removidos} removidas")
         if faltando:
             cprint(f"[yellow]  {len(faltando)} música(s) ainda não baixada(s) no pool — serão renderizadas no próximo Sync.[/]")
@@ -327,8 +330,10 @@ def mostrar_help():
         t2.add_row("9 · Corrigir Metadados", "Use se músicas aparecerem sem nome/artista no player.\nRegrava título, artista e capa em todos os .mp3.")
         t2.add_row("E · Configurar EQ", "Use pra mudar o preset de som de uma playlist.\nPadrão, Fone de Ouvido, Caixa de Som ou Som Automotivo.")
         t2.add_row("U · Adicionar URL Manual", "Use quando a busca automática não achou a música.\nCole o link do YouTube de cada uma; depois rode Sync.")
+        t2.add_row("V · Revisar URLs", "Use depois do Sync se ele avisar 'URL com baixa confiança'.\nAceite, rejeite (busca outro vídeo) ou cole a URL certa.")
         t2.add_row("P · Resetar Puladas", "Use quando quiser retentar músicas puladas por copyright.\nLista as puladas, escolha quais liberar — depois rode Sync.")
         t2.add_row("R · Registrar MP3s do Disco", "Use ao migrar de máquina ou copiar músicas manualmente.\nImporta os .mp3 existentes para o sistema não baixar de novo.")
+        t2.add_row("D · Diagnóstico", "Use quando algo falhar sem motivo claro.\nCheca ffmpeg, node, pacotes, disco, cookies e cache — e diz como resolver.")
         t2.add_row("H · Help", "Esta tela.")
         t2.add_row("0 · Sair", "Fecha o programa.")
         console.print(Panel(t2, title="[bold]O QUE CADA OPÇÃO FAZ[/]", border_style="dim"))
@@ -363,9 +368,11 @@ MENU = [
     ("9", "Corrigir Metadados",     "Grava título, artista e capa nos .mp3 existentes"),
     ("E", "Configurar EQ",          "Escolhe o preset de EQ/loudness de uma playlist"),
     ("U", "Adicionar URL Manual",   "Cola o link do YouTube de músicas não encontradas"),
+    ("V", "Revisar URLs",           "Confere as URLs achadas automaticamente com baixa confiança"),
     ("P", "Resetar Puladas",        "Lista músicas puladas por copyright e libera para retry"),
     ("R", "Registrar MP3s do Disco","Importa .mp3 existentes que o sistema não conhece"),
     ("G", "Gerenciar Playlists",    "Criar, listar e remover playlists do perfil"),
+    ("D", "Diagnóstico",            "Checa ffmpeg, node, pacotes, disco, cookies e cache"),
     ("H", "Help",                   "Documentação detalhada de todas as opções"),
     ("0", "Sair",                   ""),
 ]
@@ -374,8 +381,8 @@ MENU = [
 # única seção, na mesma ordem em que está definido em MENU.
 GRUPOS_MENU = [
     ("SINCRONIZAÇÃO", ["1", "2"]),
-    ("MANUTENÇÃO", ["3", "4", "5", "6", "7", "8", "9", "E", "U", "P", "R"]),
-    ("SISTEMA", ["G", "H", "0"]),
+    ("MANUTENÇÃO", ["3", "4", "5", "6", "7", "8", "9", "E", "U", "V", "P", "R"]),
+    ("SISTEMA", ["G", "D", "H", "0"]),
 ]
 
 
@@ -487,9 +494,11 @@ def menu():
             elif opcao == "9": fix_tags()
             elif opcao == "E": configurar_eq()
             elif opcao == "U": definir_url_manual()
+            elif opcao == "V": revisar_urls_automaticas()
             elif opcao == "P": resetar_skips_copyright()
             elif opcao == "R": rebuild()
             elif opcao == "G": gerenciar_playlists()
+            elif opcao == "D": diagnosticar()
             elif opcao == "H": mostrar_help()
             elif opcao == "0": break
         except LockError:

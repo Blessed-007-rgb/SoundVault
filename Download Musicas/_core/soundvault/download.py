@@ -12,7 +12,7 @@ from .console_log import log
 from .playlist import parsear, nome_arquivo, checar_integridade, calcular_md5, sanitizar, classificar_erro, extrair_video_id, ERROS_REDE
 from .storage import _state_lock, salvar_cache_entrada
 from .tags import gravar_tags
-from .procutil import sem_janela
+from .procutil import sem_janela, ytdlp_js_args
 
 _workers_ativos = 3
 _rate_limit_lock = threading.Lock()
@@ -102,8 +102,9 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
         "--no-playlist",
         "--quiet",
         "--no-part",
+        *ytdlp_js_args(),
     ]
-    cmd_com_cookies = _base_args + (["--cookies", str(config.COOKIES_FILE)] if config.COOKIES_FILE.exists() else [])
+    cmd_com_cookies = _base_args + config.cookies_args()
     cmd_sem_cookies = _base_args[:]
     cmd = cmd_sem_cookies + [url]
     _cmd_com_cookies_url = cmd_com_cookies + [url]
@@ -142,7 +143,8 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
         if tipo in ("permanent", "format"):
             motivo_original = stderr.split("\n")[-1] if stderr else "vídeo indisponível"
             log.warning(f"[COPYRIGHT] {chave} — tentando YouTube Music como alternativa...")
-            alt_url = search.buscar_ytmusic(chave)
+            det_alt = search.buscar_ytmusic_detalhado(chave)
+            alt_url = det_alt["url"] if det_alt else None
             if alt_url:
                 log.info(f"[ALT] URL alternativa encontrada: {alt_url}")
                 # Bug (achado nesta revisão): cmd_alt era montado a partir de
@@ -151,7 +153,7 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
                 # logo abaixo inatingível (_cookie_idx sempre -1) e a URL
                 # alternativa nunca tentava com cookies, reduzindo a chance
                 # de sucesso em vídeos que exigem login.
-                if config.COOKIES_FILE.exists():
+                if config.cookies_disponiveis():
                     cmd_alt = cmd_com_cookies + [alt_url]
                     cmd_alt_anon = cmd_sem_cookies + [alt_url]
                 else:
@@ -195,7 +197,7 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
                                             "alt_source": True,
                                         }
                                 try:
-                                    salvar_cache_entrada(chave, {"url": alt_url, "id": extrair_video_id(alt_url)})
+                                    salvar_cache_entrada(chave, search.entrada_de_busca(det_alt) if det_alt else {"url": alt_url, "id": extrair_video_id(alt_url)})
                                     log.info(f"[CACHE] URL alternativa salva para: {chave}")
                                 except Exception as _ce:
                                     log.warning(f"[CACHE] Falha ao salvar URL alternativa: {_ce}")

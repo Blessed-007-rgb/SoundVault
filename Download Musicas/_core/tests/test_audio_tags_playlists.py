@@ -179,7 +179,7 @@ class TestReaplicarAudio:
         for nome in ("Treino", "Sertanejo", "Sex"):
             playlists.criar_playlist(nome)
         vistas = []
-        monkeypatch.setattr(playlists, "reconciliar_links", lambda n: (vistas.append(n) or (1, 0, [])))
+        monkeypatch.setattr(playlists, "reconciliar_links", lambda n, cb=None: (vistas.append(n) or (1, 0, [])))
         monkeypatch.setattr(rebuild.os, "system", lambda *a: 0)
         monkeypatch.setattr("shutil.which", lambda *_: "ffmpeg")
         return rebuild, vistas
