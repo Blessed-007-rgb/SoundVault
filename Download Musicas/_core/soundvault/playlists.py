@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from . import audio, config, eq_presets
@@ -273,6 +274,7 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
 
     criados = 0
     faltando_no_pool = []
+    a_renderizar = []  # (chave, nome_arq, origem, destino)
 
     for chave, nome_arq in esperado_por_chave.items():
         destino = pasta / nome_arq
@@ -293,9 +295,29 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
             faltando_no_pool.append(f"{nome_arquivo(*parsear(chave))}.mp3")
             continue
 
-        if audio.renderizar_audio(origem, destino, preset_id):
-            render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
-            criados += 1
+        a_renderizar.append((chave, nome_arq, origem, destino))
+
+    # Cada render é um processo ffmpeg independente (um arquivo de saída
+    # próprio), e o ffmpeg usa ~1 núcleo por job — rodar vários em paralelo
+    # aproveita a CPU que ficava ociosa no loop serial. O render_state só é
+    # alterado aqui na thread principal, conforme os jobs terminam.
+    if a_renderizar:
+        n_workers = max(1, min(config.RENDER_WORKERS, len(a_renderizar)))
+        with ThreadPoolExecutor(max_workers=n_workers) as ex:
+            futuros = {
+                ex.submit(audio.renderizar_audio, origem, destino, preset_id): (chave, nome_arq)
+                for chave, nome_arq, origem, destino in a_renderizar
+            }
+            for fut in as_completed(futuros):
+                chave, nome_arq = futuros[fut]
+                try:
+                    ok = fut.result()
+                except Exception as e:
+                    log.warning(f"reconciliar_links: render de '{chave}' falhou: {e}")
+                    ok = False
+                if ok:
+                    render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
+                    criados += 1
 
     _salvar_render_state(nome, render_state)
     return criados, removidos, faltando_no_pool

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -46,20 +47,35 @@ def _gravar_perfil_eq(caminho: Path, preset_id: str):
         log.debug(f"Não foi possível gravar marca de perfil EQ em {caminho.name}: {e}")
 
 
-def _extrair_json_loudnorm(stderr: str) -> dict | None:
+_RE_LUFS = re.compile(r"^\s+I:\s+(\S+)\s+LUFS", re.MULTILINE)
+_RE_TP = re.compile(r"^\s+Peak:\s+(\S+)\s+dBFS", re.MULTILINE)
+
+# Teto de ganho aplicado — protege contra faixas quase silenciosas, onde
+# o loudness medido é tão baixo que o ganho necessário estouraria o áudio.
+_GANHO_MAX_DB = 20.0
+
+
+def _medir_loudness(stderr: str) -> tuple[float, float] | None:
     """
-    loudnorm em print_format=json escreve um bloco JSON solto no meio do
-    resto do log do FFmpeg no stderr — isola o bloco entre a primeira '{'
-    e a última '}' pra conseguir parsear.
+    Lê o resumo final do filtro ebur128 (peak=true) no stderr do FFmpeg e
+    devolve (loudness integrado em LUFS, true peak em dBFS), ou None se o
+    resumo não existir ou o áudio for silêncio digital (-inf).
+
+    Mede o mesmo valor que a primeira passada do loudnorm, só que ~4x mais
+    rápido — o loudnorm gasta a maior parte do tempo em sobreamostragem
+    interna de true-peak, que aqui não é necessária pra só medir.
     """
-    inicio = stderr.find("{")
-    fim = stderr.rfind("}")
-    if inicio == -1 or fim == -1 or fim < inicio:
+    resumo = stderr[stderr.rfind("Summary:"):]
+    m_i, m_tp = _RE_LUFS.search(resumo), _RE_TP.search(resumo)
+    if not m_i or not m_tp:
         return None
     try:
-        return json.loads(stderr[inicio:fim + 1])
-    except json.JSONDecodeError:
+        lufs, tp = float(m_i.group(1)), float(m_tp.group(1))
+    except ValueError:
         return None
+    if lufs == float("-inf") or lufs != lufs:
+        return None
+    return lufs, tp
 
 
 def renderizar_audio(origem: Path, destino: Path, preset_id: str) -> bool:
@@ -102,8 +118,8 @@ def renderizar_audio(origem: Path, destino: Path, preset_id: str) -> bool:
 
     try:
         cmd_probe = [
-            "ffmpeg", "-i", str(origem),
-            "-af", eq_chain + f"loudnorm=I={alvo['I']}:TP={alvo['TP']}:LRA={alvo['LRA']}:print_format=json",
+            "ffmpeg", "-hide_banner", "-nostats", "-i", str(origem),
+            "-af", eq_chain + "ebur128=peak=true:framelog=quiet",
             "-vn", "-sn", "-dn",
             "-f", "null", "NUL" if os.name == "nt" else "/dev/null",
         ]
@@ -113,19 +129,24 @@ def renderizar_audio(origem: Path, destino: Path, preset_id: str) -> bool:
             **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
         )
 
-        medido = _extrair_json_loudnorm(probe.stderr)
+        medido = _medir_loudness(probe.stderr)
         if medido is None:
             log.warning(f"renderizar_audio: não foi possível medir loudness de {origem.name} — renderização abortada.")
             return False
+        lufs_in, _tp_in = medido
+
+        # Ganho estático até o alvo de loudness (equivale ao loudnorm em
+        # modo linear), seguido de um limiter no teto de true peak do
+        # preset — cobre faixas cujo pico estouraria o teto depois do ganho.
+        ganho_db = max(-_GANHO_MAX_DB, min(_GANHO_MAX_DB, alvo["I"] - lufs_in))
+        teto = max(0.0625, min(1.0, 10 ** (alvo["TP"] / 20)))
 
         cmd = [
-            "ffmpeg", "-y", "-i", str(origem),
+            "ffmpeg", "-hide_banner", "-nostats", "-y", "-i", str(origem),
             "-af", (
                 eq_chain +
-                f"loudnorm=I={alvo['I']}:TP={alvo['TP']}:LRA={alvo['LRA']}:"
-                f"measured_I={medido['input_i']}:measured_TP={medido['input_tp']}:"
-                f"measured_LRA={medido['input_lra']}:measured_thresh={medido['input_thresh']}:"
-                f"offset={medido['target_offset']}:linear=true:print_format=summary"
+                f"volume={ganho_db:.3f}dB,"
+                f"alimiter=limit={teto:.4f}:level=disabled"
             ),
             "-codec:a", "libmp3lame", "-q:a", "2",
             "-map_metadata", "0",
@@ -137,7 +158,7 @@ def renderizar_audio(origem: Path, destino: Path, preset_id: str) -> bool:
         )
         if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 10240:
             tmp.replace(destino)
-            log.info(f"Renderizado: {destino.name} [preset={preset_id} | {medido['input_i']}LUFS -> {alvo['I']}LUFS]")
+            log.info(f"Renderizado: {destino.name} [preset={preset_id} | {lufs_in}LUFS -> {alvo['I']}LUFS]")
             _gravar_perfil_eq(destino, preset_id)
             return True
         else:

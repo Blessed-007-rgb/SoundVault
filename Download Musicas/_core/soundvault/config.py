@@ -65,6 +65,9 @@ DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 WORKERS       = 3
+# Renders de EQ/loudnorm simultâneos (ffmpeg usa ~1 núcleo por job). Deixa
+# 1 núcleo livre pro resto do sistema; mínimo 1.
+RENDER_WORKERS = max(1, (os.cpu_count() or 2) - 1)
 MAX_RETRIES   = 5
 RETRY_DELAY   = 3
 TIMEOUT_DL    = 300
