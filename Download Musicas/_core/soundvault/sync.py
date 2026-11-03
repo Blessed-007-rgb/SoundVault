@@ -10,7 +10,7 @@ from .console_log import console, RICH_OK, log, cprint
 from .lock import adquirir_lock, liberar_lock, LockError
 from .playlist import parsear, nome_arquivo, sanitizar, extrair_video_id
 from . import playlists
-from .storage import carregar_cache, carregar_state, carregar_falhas, salvar_state, salvar_falhas, salvar_historico, salvar_cache_entrada
+from .storage import carregar_cache, carregar_state, carregar_falhas, salvar_state, salvar_falhas, salvar_historico, salvar_cache_entrada, entrada_cache_valida
 from .search import buscar_ytmusic
 from .cache_maint import atualizar_urls_mortas, validar_cache
 
@@ -263,7 +263,9 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
                 console.print(Panel(f"[bold]Retentando [cyan]{len(pendentes)}[/cyan] músicas que falharam[/]", border_style="yellow"))
         else:
             pendentes = {nome: cache.get(nome, {}) for nome in playlist_alvo if nome not in nomes_concluidos}
-            sem_url = [n for n in pendentes if not cache.get(n, {}).get("url")]
+            # Inclui entradas com URL/ID corrompido (ex.: ID com 12 chars):
+            # tratadas como "sem URL" pra serem re-buscadas automaticamente.
+            sem_url = [n for n in pendentes if not entrada_cache_valida(cache.get(n))]
 
             _urls_atualizadas = atualizar_urls_mortas(cache, list(playlist_alvo))
             if _urls_atualizadas and RICH_OK:
@@ -307,7 +309,7 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
                         if RICH_OK:
                             console.print(f"  [red]✗[/] Não encontrada: [dim]{nome}[/]")
                         log.warning(f"[AUTO-URL] Não encontrada: {nome}")
-                pendentes = {n: d for n, d in pendentes.items() if d.get("url")}
+                pendentes = {n: d for n, d in pendentes.items() if entrada_cache_valida(d)}
 
         if not pendentes:
             cprint("[green]✓ Tudo já está sincronizado![/]")

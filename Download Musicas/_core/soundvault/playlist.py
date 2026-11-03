@@ -21,7 +21,10 @@ def extrair_video_id(url: str) -> str:
     (`if video_id:` nunca era verdadeiro), fazendo a música nunca contar
     como concluída em nenhum Sync futuro.
     """
-    m = re.search(r"(?:v=|youtu\.be/)([\w-]{11})", url)
+    # (?![\w-]) rejeita IDs com mais de 11 caracteres (URL corrompida):
+    # sem isso, "v=_xLQ1QkGB6bk" (12 chars) virava o ID errado "_xLQ1QkGB6b"
+    # em silêncio, e o download falhava com "video unavailable".
+    m = re.search(r"(?:v=|youtu\.be/)([\w-]{11})(?![\w-])", url)
     return m.group(1) if m else ""
 
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from . import config
 from .console_log import log
+from .playlist import extrair_video_id
 
 _state_lock = threading.Lock()
 _cache_lock = threading.Lock()
@@ -98,7 +99,30 @@ def carregar_cache() -> dict:
         return {}
 
 
-def salvar_cache_entrada(chave: str, dados: dict):
+def normalizar_entrada_cache(dados) -> dict | None:
+    """
+    Valida uma entrada do playlist_cache.json: a URL precisa conter um ID
+    de vídeo de exatamente 11 caracteres. Devolve a entrada com "id"
+    sempre igual ao ID extraído da URL (corrige id vazio/divergente), ou
+    None se a URL for inválida/corrompida (ex.: ID com 12 caracteres).
+    """
+    if not isinstance(dados, dict):
+        return None
+    vid = extrair_video_id(str(dados.get("url", "")))
+    if not vid:
+        return None
+    return {**dados, "id": vid}
+
+
+def entrada_cache_valida(dados) -> bool:
+    """True se a entrada tem URL com ID de vídeo válido E um id coerente."""
+    if not isinstance(dados, dict):
+        return False
+    vid = extrair_video_id(str(dados.get("url", "")))
+    return bool(vid) and dados.get("id", vid) in ("", vid)
+
+
+def salvar_cache_entrada(chave: str, dados: dict) -> bool:
     """
     Atualiza uma única entrada do playlist_cache.json de forma atômica e
     thread-safe. Sem o lock, dois workers de download() em paralelo que
@@ -107,10 +131,15 @@ def salvar_cache_entrada(chave: str, dados: dict):
     escrever sobrescreveria o cache inteiro sem a alteração do primeiro,
     perdendo a URL alternativa dele silenciosamente.
     """
+    normalizada = normalizar_entrada_cache(dados)
+    if normalizada is None:
+        log.warning(f"[CACHE] Entrada recusada (URL/ID de vídeo inválido): {chave}")
+        return False
     with _cache_lock:
         cache = carregar_cache()
-        cache[chave] = dados
+        cache[chave] = normalizada
         _escrever_json_atomico(config.CACHE_FILE, cache)
+    return True
 
 
 def carregar_falhas() -> dict:
