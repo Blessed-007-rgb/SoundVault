@@ -1,0 +1,5 @@
+# Ferramentas de desenvolvimento.  Instalar:  pip install -r requirements-dev.txt
+-r requirements.txt
+pytest
+ruff
+pyright

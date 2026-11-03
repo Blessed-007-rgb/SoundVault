@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/pos_edicao.py\"",
+            "timeout": 30,
+            "statusMessage": "Conferindo o arquivo com ruff..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/fim_de_turno.py\"",
+            "timeout": 180,
+            "statusMessage": "Rodando pytest e pyright nos arquivos alterados..."
+          }
+        ]
+      }
+    ]
+  }
+}

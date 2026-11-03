@@ -1,0 +1,12 @@
+# Dependências Python do SoundVault.  Instalar:  pip install -r requirements.txt
+#
+# Além destas, são necessários no PATH (veja README §1): ffmpeg/ffprobe e Node.js.
+# Confira tudo de uma vez com:  python -m soundvault --doctor
+
+# [default] inclui o yt-dlp-ejs (scripts que resolvem os desafios de JavaScript do
+# YouTube) e outras extras recomendadas; sem elas o yt-dlp perde formatos.
+yt-dlp[default]
+rich
+mutagen
+# usado pelo lock que impede duas execuções simultâneas (sem ele o lock não confere o PID)
+psutil
