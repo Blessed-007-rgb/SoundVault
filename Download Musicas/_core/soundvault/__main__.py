@@ -3,7 +3,7 @@ import traceback as _tb_mod
 from datetime import datetime
 
 from . import config
-from .console_log import console, RICH_OK, init_logging, log, cprint
+from .console_log import console, RICH_OK, init_logging, log, cprint, Panel
 
 
 def main():
@@ -43,7 +43,6 @@ def main():
         from . import playlists
         if not playlists.listar_playlists() and (config.BASE_DIR / "playlist.txt").exists():
             if RICH_OK:
-                from rich.panel import Panel
                 console.print(Panel(
                     "[bold]Migrando pro novo formato de múltiplas playlists...[/]\n"
                     "[dim]Sua playlist.txt atual vai virar a primeira playlist.[/]",

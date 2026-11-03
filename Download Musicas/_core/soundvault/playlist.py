@@ -2,6 +2,9 @@ import hashlib
 import re
 from pathlib import Path
 
+from typing import Any
+
+MP3: Any = None
 try:
     from mutagen.mp3 import MP3
     MUTAGEN_OK = True

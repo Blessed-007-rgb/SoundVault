@@ -1,6 +1,14 @@
 import urllib.request
 from pathlib import Path
 
+from typing import Any
+
+ID3: Any = None
+TIT2: Any = None
+TPE1: Any = None
+TALB: Any = None
+APIC: Any = None
+ID3NoHeaderError: Any = None
 try:
     from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, ID3NoHeaderError
     MUTAGEN_OK = True

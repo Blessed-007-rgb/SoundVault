@@ -2,17 +2,12 @@ import os
 from datetime import datetime
 
 from . import config
-from .console_log import console, RICH_OK, cprint, log
+from .console_log import console, RICH_OK, cprint, log, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, box
 from .playlist import parsear, nome_arquivo, sanitizar, calcular_md5, detectar_colisoes, MUTAGEN_OK
 from . import playlists
 from .storage import carregar_state, salvar_state
 from .tags import gravar_tags
 
-if RICH_OK:
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn
-    from rich import box
 
 
 def rebuild():

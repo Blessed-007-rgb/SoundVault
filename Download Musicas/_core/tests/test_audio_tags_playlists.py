@@ -24,7 +24,9 @@ def _loudness(arquivo):
          "-vn", "-f", "null", "-"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
-    return audio._medir_loudness(r.stderr)
+    medido = audio._medir_loudness(r.stderr)
+    assert medido is not None, "ebur128 não devolveu resumo de loudness"
+    return medido
 
 
 class TestEqPresets:

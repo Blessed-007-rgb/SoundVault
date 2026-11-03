@@ -5,12 +5,14 @@ import subprocess
 import threading
 import time
 from datetime import datetime
+from typing import Any
 
 from . import config, cookies, search
 from .console_log import log
 from .playlist import parsear, nome_arquivo, checar_integridade, calcular_md5, sanitizar, classificar_erro, extrair_video_id, ERROS_REDE
 from .storage import _state_lock, salvar_cache_entrada
 from .tags import gravar_tags
+from .procutil import sem_janela
 
 _workers_ativos = 3
 _rate_limit_lock = threading.Lock()
@@ -113,10 +115,10 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
     # console (ex: cp1252), que pode não decodificar a saída UTF-8 do
     # yt-dlp (títulos acentuados, símbolos), lançando UnicodeDecodeError
     # não tratado e pulando toda a lógica de retry/classificação de erro.
-    _subproc_kwargs = dict(
+    _subproc_kwargs: dict[str, Any] = dict(
         capture_output=True, text=True, timeout=config.TIMEOUT_DL,
         encoding="utf-8", errors="replace",
-        **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
+        **sem_janela()
     )
 
     for tentativa in range(1, config.MAX_RETRIES + 1):

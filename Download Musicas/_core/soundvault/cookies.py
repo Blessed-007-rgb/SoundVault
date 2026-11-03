@@ -1,5 +1,4 @@
 import json
-import os
 import subprocess
 import threading
 import time
@@ -7,8 +6,9 @@ import webbrowser
 from datetime import datetime, timedelta
 
 from . import config
-from .console_log import console, RICH_OK, log
+from .console_log import console, RICH_OK, log, Panel
 from .playlist import classificar_erro
+from .procutil import sem_janela
 
 _cookie_renovado = threading.Event()
 _prompt_exibido = threading.Event()
@@ -50,7 +50,7 @@ def verificar_cookie_valido(forcar: bool = False) -> bool | None:
             ["yt-dlp", "--cookies", str(config.COOKIES_FILE), "--skip-download",
              "--simulate", "--quiet", _URL_TESTE_COOKIE],
             capture_output=True, text=True, timeout=20, encoding="utf-8", errors="replace",
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
+            **sem_janela()
         )
     except Exception as e:
         log.debug(f"[HEALTH] Não foi possível testar cookies.txt agora: {e}")
@@ -98,7 +98,6 @@ def solicitar_renovacao_cookies():
             return
         _prompt_exibido.set()
         if RICH_OK:
-            from rich.panel import Panel
             console.print(Panel(
                 "[bold yellow]⚠  Cookie do YouTube expirado![/]\n\n"
                 "  1. Abra uma [bold]janela anônima/privada[/] e entre em youtube.com\n"

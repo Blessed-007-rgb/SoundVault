@@ -1,5 +1,7 @@
 import re
 import unicodedata
+from collections.abc import Mapping
+from typing import Any, cast
 from difflib import SequenceMatcher
 
 from . import config
@@ -51,7 +53,7 @@ def _separar_artistas(artista: str) -> list[str]:
     return [p.strip() for p in partes if p and p.strip()] or [artista.strip()]
 
 
-def _pontuar_candidato(artista: str, titulo: str, entry: dict) -> float | None:
+def _pontuar_candidato(artista: str, titulo: str, entry: Mapping[str, Any]) -> float | None:
     """
     Retorna um score 0-100 de confiança de que `entry` é a música
     (artista, titulo) pedida, ou None se o candidato deve ser descartado
@@ -129,7 +131,7 @@ def buscar_ytmusic(chave: str) -> str | None:
         f"ytsearch5:{titulo} {_separar_artistas(artista)[0]}",
         f"ytsearch5:{titulo}",
     ]
-    opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
+    opts: dict[str, Any] = {"quiet": True, "no_warnings": True, "extract_flat": True}
     if config.COOKIES_FILE.exists():
         opts["cookiefile"] = str(config.COOKIES_FILE)
 
@@ -153,7 +155,7 @@ def buscar_ytmusic(chave: str) -> str | None:
     for query in queries:
         try:
             from yt_dlp import YoutubeDL
-            with YoutubeDL(opts) as ydl:
+            with YoutubeDL(cast(Any, opts)) as ydl:
                 info = ydl.extract_info(query, download=False)
                 entries = info.get("entries", []) if info else []
         except Exception as e:
@@ -162,7 +164,9 @@ def buscar_ytmusic(chave: str) -> str | None:
 
         for entry in entries:
             vid = entry.get("id", "")
-            uploader = (entry.get("uploader", "") or entry.get("channel", "")).lower()
+            # `or ""`: em resultados "flat" o campo pode existir com valor None,
+            # e None.lower() derrubava o Sync inteiro (fora de qualquer try).
+            uploader = (entry.get("uploader") or entry.get("channel") or "").lower()
             if not vid or "vevo" in uploader:
                 continue
             dono = ocupados.get(vid)

@@ -1,7 +1,7 @@
 import os
 
 from . import config, eq_presets, playlists
-from .console_log import console, RICH_OK, cprint, log
+from .console_log import console, RICH_OK, cprint, log, Table, Panel, Prompt, Group, Text, box
 from .storage import carregar_state, salvar_state, carregar_historico
 from .lock import LockError
 from .sync import sincronizar
@@ -10,13 +10,6 @@ from .audit import auditoria
 from .cache_maint import exibir_validacao_cache, definir_url_manual
 from .rebuild import rebuild, fix_tags, reaplicar_audio
 
-if RICH_OK:
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.prompt import Prompt
-    from rich.console import Group
-    from rich.text import Text
-    from rich import box
 
 
 def resetar_skips_copyright():

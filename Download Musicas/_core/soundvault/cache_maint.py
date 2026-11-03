@@ -1,15 +1,11 @@
 import re
 
 from . import config
-from .console_log import console, RICH_OK, cprint, log
+from .console_log import console, RICH_OK, cprint, log, Table, Panel, box
 from .storage import carregar_falhas, carregar_cache, _escrever_json_atomico
 from .search import buscar_ytmusic
 from .playlist import extrair_video_id, classificar_erro
 
-if RICH_OK:
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich import box
 
 
 def atualizar_urls_mortas(cache: dict, playlist: list) -> int:

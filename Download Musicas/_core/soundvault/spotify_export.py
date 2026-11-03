@@ -36,6 +36,9 @@ from pathlib import Path
 from . import config as _config
 from . import playlists as _playlists_mod
 
+from typing import Any
+
+PublicPlaylist: Any = None
 try:
     from spotapi import PublicPlaylist
     SPOTAPI_OK = True

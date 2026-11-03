@@ -7,7 +7,13 @@ from pathlib import Path
 
 from . import config, eq_presets
 from .console_log import log
+from .procutil import sem_janela
 
+from typing import Any
+
+ID3: Any = None
+TXXX: Any = None
+ID3NoHeaderError: Any = None
 try:
     from mutagen.id3 import ID3, TXXX, ID3NoHeaderError
     MUTAGEN_OK = True
@@ -126,7 +132,7 @@ def renderizar_audio(origem: Path, destino: Path, preset_id: str) -> bool:
         probe = subprocess.run(
             cmd_probe, capture_output=True, text=True, timeout=60,
             encoding="utf-8", errors="replace",
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
+            **sem_janela()
         )
 
         medido = _medir_loudness(probe.stderr)
@@ -154,7 +160,7 @@ def renderizar_audio(origem: Path, destino: Path, preset_id: str) -> bool:
         ]
         result = subprocess.run(
             cmd, capture_output=True, timeout=180,
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
+            **sem_janela()
         )
         if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 10240:
             tmp.replace(destino)

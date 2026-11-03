@@ -1,8 +1,8 @@
-import os
 import re
 import sys
 import logging
 import subprocess
+from typing import Any
 from logging.handlers import RotatingFileHandler
 
 # Corrige na raiz, em vez de remendar console.print() por console.print():
@@ -14,24 +14,47 @@ from logging.handlers import RotatingFileHandler
 # "replace" troca o caractere problemático por "?" em vez de travar.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(errors="replace")
+        getattr(_stream, "reconfigure")(errors="replace")
     except (AttributeError, ValueError):
         pass  # stream sem reconfigure() (ex: redirecionado pra algo exótico) — ignora
 
 try:
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn
-    from rich.prompt import Prompt
-    from rich import box
+    from rich.console import Console, Group  # noqa: F401  (reexportados pros outros módulos)
+    from rich.table import Table  # noqa: F401
+    from rich.panel import Panel  # noqa: F401
+    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn  # noqa: F401
+    from rich.prompt import Prompt  # noqa: F401
+    from rich.text import Text  # noqa: F401
+    from rich import box  # noqa: F401
     RICH_OK = True
 except ImportError:
     RICH_OK = False
 
-from . import config
+    class _SemRich:
+        """Substituto quando o pacote 'rich' não está instalado. Todo ponto
+        de uso do rich no projeto é protegido por `if RICH_OK:`, então isto
+        nunca chega a ser instanciado — só mantém os nomes sempre definidos
+        pra os módulos poderem importá-los daqui sem import condicional."""
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("O pacote 'rich' não está instalado (pip install rich).")
 
-console = Console() if RICH_OK else None
+    Console = Group = Table = Panel = Progress = SpinnerColumn = _SemRich  # type: ignore
+    BarColumn = MofNCompleteColumn = TimeElapsedColumn = TextColumn = _SemRich  # type: ignore
+    Prompt = Text = box = _SemRich  # type: ignore
+
+from . import config
+from .procutil import sem_janela
+
+
+class _ConsoleSimples:
+    """console.print() sem rich: imprime o texto sem as marcações [cor]...[/]."""
+    def print(self, *args, **kwargs):
+        texto = " ".join(str(a) for a in args)
+        print(re.sub(r'\[/?[^\]]+\]', '', texto))
+
+
+# Any: é um rich.Console de verdade quando RICH_OK, ou o substituto simples.
+console: Any = Console() if RICH_OK else _ConsoleSimples()
 log = logging.getLogger("soundvault")
 _logging_inicializado = False
 
@@ -55,7 +78,7 @@ def notificar_windows(titulo: str, mensagem: str):
         subprocess.Popen(
             ["powershell", "-WindowStyle", "Hidden", "-Command", ps],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
+            **sem_janela()
         )
     except Exception:
         pass  # notificação é opcional

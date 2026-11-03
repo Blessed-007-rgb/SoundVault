@@ -1,15 +1,11 @@
 import os
 
 from . import config
-from .console_log import console, RICH_OK
+from .console_log import console, RICH_OK, Table, Panel, box
 from .playlist import parsear, nome_arquivo, checar_integridade, detectar_colisoes
 from . import playlists
 from .storage import carregar_cache, carregar_state, carregar_falhas, entrada_cache_valida
 
-if RICH_OK:
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich import box
 
 
 def auditoria(nome_playlist: str | None = None):

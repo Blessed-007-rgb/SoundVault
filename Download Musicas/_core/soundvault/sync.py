@@ -6,20 +6,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from . import config, cookies, download
-from .console_log import console, RICH_OK, log, cprint
+from .console_log import console, RICH_OK, log, cprint, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, Prompt, box
 from .lock import adquirir_lock, liberar_lock
 from .playlist import parsear, nome_arquivo, sanitizar, extrair_video_id
 from . import playlists
 from .storage import carregar_cache, carregar_state, carregar_falhas, salvar_state, salvar_falhas, salvar_historico, salvar_cache_entrada, entrada_cache_valida
 from .search import buscar_ytmusic
 from .cache_maint import atualizar_urls_mortas, validar_cache
+from .procutil import sem_janela
 
-if RICH_OK:
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn
-    from rich.prompt import Prompt
-    from rich import box
 
 # Acima desse número de remoções num único Sync, pede confirmação antes
 # de apagar — evita que um erro no playlist.txt (ex: linha apagada por
@@ -44,7 +39,7 @@ def verificar_atualizar_ytdlp():
             result = subprocess.run(
                 ["yt-dlp", "--update-to", "stable"],
                 capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace",
-                **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
+                **sem_janela()
             )
             saida = result.stdout + result.stderr
             if "Updated" in saida or "Updating" in saida:
