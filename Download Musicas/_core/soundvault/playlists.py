@@ -284,6 +284,32 @@ def reconciliar_links(nome: str, ao_progredir: Callable[[int, int], None] | None
     perfil = audio.perfil_atual(preset_id)
     render_state = _ler_render_state(nome)
 
+    # 1) Reordenação: música já renderizada com o preset atual que só mudou de
+    # POSIÇÃO (o prefixo numérico vem do rodízio por artista, então entrar músicas
+    # novas desloca o prefixo de várias antigas) é só RENOMEADA. Isto precisa vir
+    # ANTES da exclusão logo abaixo: antes, o arquivo com o nome antigo era apagado
+    # primeiro e a música caía no "sumiu do disco" -> re-renderizava (~8 s cada) —
+    # adicionar 12 músicas chegava a refazer 100 renders de músicas antigas.
+    renomeados = 0
+    for chave, nome_arq in esperado_por_chave.items():
+        entrada = render_state.get(chave)
+        if not (entrada and entrada.get("preset") == preset_id and entrada.get("hash") == perfil):
+            continue
+        nome_antigo = entrada.get("file") or ""
+        if not nome_antigo or nome_antigo == nome_arq:
+            continue
+        antigo, novo = pasta / nome_antigo, pasta / nome_arq
+        if antigo.is_file() and not novo.exists():
+            try:
+                antigo.rename(novo)
+                entrada["file"] = nome_arq
+                renomeados += 1
+            except OSError as e:  # ex.: arquivo aberto no player — cai no re-render normal
+                log.warning(f"reconciliar_links: não consegui renomear '{nome_antigo}': {e}")
+    if renomeados:
+        _salvar_render_state(nome, render_state)
+        log.info(f"reconciliar_links: {renomeados} arquivo(s) de '{nome}' só mudaram de posição (renomeados, sem re-renderizar)")
+
     esperados_nomes = set(esperado_por_chave.values())
     existentes = {f.name for f in pasta.glob("*.mp3")}
 
@@ -331,30 +357,48 @@ def reconciliar_links(nome: str, ao_progredir: Callable[[int, int], None] | None
             ao_progredir(0, total_render)
         n_workers = max(1, min(config.RENDER_WORKERS, len(a_renderizar)))
         ex = ThreadPoolExecutor(max_workers=n_workers)
+        futuros: dict = {}
+        registrados: set = set()
+
+        def _registrar(fut) -> None:
+            """Anota no render_state (e já grava em disco) uma música renderizada com sucesso."""
+            nonlocal criados
+            chave, nome_arq = futuros[fut]
+            if fut in registrados:
+                return
+            registrados.add(fut)
+            try:
+                ok = fut.result()
+            except Exception as e:
+                log.warning(f"reconciliar_links: render de '{chave}' falhou: {e}")
+                ok = False
+            if ok:
+                render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
+                criados += 1
+                # Grava a CADA música pronta: se o programa for interrompido (Ctrl+C,
+                # janela fechada, queda de energia) o progresso não se perde. Antes só
+                # gravava no fim, e interromper um render de 100 faixas refazia tudo.
+                _salvar_render_state(nome, render_state)
+
         try:
             futuros = {
                 ex.submit(audio.renderizar_audio, origem, destino, preset_id): (chave, nome_arq)
                 for chave, nome_arq, origem, destino in a_renderizar
             }
             for fut in as_completed(futuros):
-                chave, nome_arq = futuros[fut]
-                try:
-                    ok = fut.result()
-                except Exception as e:
-                    log.warning(f"reconciliar_links: render de '{chave}' falhou: {e}")
-                    ok = False
+                _registrar(fut)
                 feitos += 1
                 if ao_progredir:
                     ao_progredir(feitos, total_render)
-                if ok:
-                    render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
-                    criados += 1
         finally:
-            # Ctrl+C: o `with ThreadPoolExecutor` padrão esperaria TODAS as
-            # tarefas enfileiradas terminarem (centenas de renders de ~8s).
-            # cancel_futures descarta as que ainda não começaram, e o
-            # render_state abaixo preserva o que já foi concluído.
+            # Ctrl+C: o `with ThreadPoolExecutor` padrão esperaria TODAS as tarefas
+            # enfileiradas terminarem (centenas de renders de ~8 s). cancel_futures
+            # descarta as que ainda não começaram; as que já estavam rodando terminam
+            # durante o shutdown e são registradas na varredura abaixo.
             ex.shutdown(wait=True, cancel_futures=True)
+            for fut in futuros:
+                if fut.done() and not fut.cancelled():
+                    _registrar(fut)
 
     _salvar_render_state(nome, render_state)
     return criados, removidos, faltando_no_pool
