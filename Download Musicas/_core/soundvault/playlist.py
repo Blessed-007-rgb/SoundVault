@@ -8,7 +8,6 @@ try:
 except ImportError:
     MUTAGEN_OK = False
 
-from . import config
 
 
 def extrair_video_id(url: str) -> str:
@@ -48,9 +47,22 @@ def parsear(chave: str) -> tuple[str, str]:
     return chave.strip(), chave.strip()
 
 
+# Limite do NOME (sem extensão) — o Windows rejeita componentes de caminho
+# com mais de 255 caracteres, e ainda entram o prefixo numérico "NNN - ",
+# ".render.mp3" e o prefixo/sufixo dos temporários "__dl_...". O maior nome
+# real hoje tem ~206 chars, então nenhum arquivo existente é afetado.
+MAX_NOME_ARQUIVO = 220
+
+
 def nome_arquivo(artista: str, titulo: str) -> str:
-    """Nome do .mp3 no disco: 'Título - Artista'"""
-    return sanitizar(f"{titulo} - {artista}")
+    """Nome do .mp3 no disco: 'Título - Artista'. Nomes acima de
+    MAX_NOME_ARQUIVO são truncados com um sufixo de hash (determinístico,
+    evita colisão entre dois nomes longos com o mesmo começo)."""
+    nome = sanitizar(f"{titulo} - {artista}")
+    if len(nome) <= MAX_NOME_ARQUIVO:
+        return nome
+    h = hashlib.md5(nome.encode("utf-8")).hexdigest()[:8]
+    return f"{nome[:MAX_NOME_ARQUIVO - 10].rstrip()}~{h}"
 
 
 def detectar_colisoes(nomes: list[str]) -> dict[str, list[str]]:

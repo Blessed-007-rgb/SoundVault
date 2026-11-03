@@ -7,7 +7,7 @@ from datetime import datetime
 
 from . import config, cookies, download
 from .console_log import console, RICH_OK, log, cprint
-from .lock import adquirir_lock, liberar_lock, LockError
+from .lock import adquirir_lock, liberar_lock
 from .playlist import parsear, nome_arquivo, sanitizar, extrair_video_id
 from . import playlists
 from .storage import carregar_cache, carregar_state, carregar_falhas, salvar_state, salvar_falhas, salvar_historico, salvar_cache_entrada, entrada_cache_valida
@@ -110,6 +110,10 @@ class _DynamicGate:
 def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
     adquirir_lock()
     cookies.reset_sessao()
+    # Contadores globais de rate limit são por processo: sem o reset, um
+    # segundo Sync na mesma sessão do menu já começava com workers
+    # reduzidos (e "N bloqueios" acumulados) por causa do Sync anterior.
+    download.resetar_contadores()
     try:
         os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
         log.debug("sincronizar() chamada")
@@ -212,17 +216,20 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
                     title=f"[bold yellow]⚠ {total_candidatos} MÚSICAS SERÃO REMOVIDAS DO DISCO[/]",
                     border_style="yellow",
                 ))
+                # Padrão "N": ação destrutiva nunca deve ser confirmada por
+                # um Enter distraído (ou por entrada vazia/EOF em modo não
+                # interativo).
                 resposta = Prompt.ask(
                     "  Remover esses arquivos do disco?",
-                    choices=["S", "s", "N", "n"], default="S",
+                    choices=["S", "s", "N", "n"], default="N",
                 ).upper()
                 prosseguir_remocao = resposta == "S"
             else:
                 print(f"\n{total_candidatos} musicas serão removidas:")
                 for nome in nomes_exibicao:
                     print(f"  - {nome}")
-                resposta = input("Remover esses arquivos do disco? [S/n]: ").strip().upper()
-                prosseguir_remocao = resposta != "N"
+                resposta = input("Remover esses arquivos do disco? [s/N]: ").strip().upper()
+                prosseguir_remocao = resposta == "S"
 
         removidos = []
         orfaos_removidos = []

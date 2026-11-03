@@ -4,7 +4,7 @@ from . import config
 from .console_log import console, RICH_OK, cprint, log
 from .storage import carregar_falhas, carregar_cache, _escrever_json_atomico
 from .search import buscar_ytmusic
-from .playlist import extrair_video_id
+from .playlist import extrair_video_id, classificar_erro
 
 if RICH_OK:
     from rich.table import Table
@@ -24,8 +24,10 @@ def atualizar_urls_mortas(cache: dict, playlist: list) -> int:
     for nome in playlist:
         if nome not in falhas:
             continue
-        motivo = falhas[nome].lower()
-        if "requested format is not available" not in motivo and "copyright" not in motivo:
+        # Mesma classificação usada no download: cobre formato/copyright e
+        # também "This video is (not) available" (URL morta), que antes
+        # ficava de fora e nunca era re-buscada.
+        if classificar_erro(str(falhas[nome])) not in ("permanent", "format"):
             continue
         nova_url = buscar_ytmusic(nome)
         if nova_url and nova_url != cache.get(nome, {}).get("url", ""):

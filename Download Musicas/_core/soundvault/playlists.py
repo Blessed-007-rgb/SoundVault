@@ -7,6 +7,7 @@ from pathlib import Path
 from . import audio, config, eq_presets
 from .console_log import log
 from .playlist import carregar_playlist as _carregar_playlist_de, parsear, nome_arquivo
+from .storage import _escrever_json_atomico
 
 
 def playlists_dir() -> Path:
@@ -89,7 +90,7 @@ def definir_preset(nome: str, preset_id: str):
         raise ValueError(f"Preset desconhecido: {preset_id}")
     caminho = caminho_preset(nome)
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    caminho.write_text(json.dumps({"preset": preset_id}), encoding="utf-8")
+    _escrever_json_atomico(caminho, {"preset": preset_id})
 
 
 def _caminho_render_state(nome: str) -> Path:
@@ -114,7 +115,9 @@ def _ler_render_state(nome: str) -> dict:
 def _salvar_render_state(nome: str, state: dict):
     caminho = _caminho_render_state(nome)
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    caminho.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    # Atômico: um render_state truncado por queda de energia/Ctrl+C forçaria
+    # re-renderizar a playlist inteira (centenas de músicas).
+    _escrever_json_atomico(caminho, state)
 
 
 def remover_playlist(nome: str):
@@ -303,7 +306,8 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
     # alterado aqui na thread principal, conforme os jobs terminam.
     if a_renderizar:
         n_workers = max(1, min(config.RENDER_WORKERS, len(a_renderizar)))
-        with ThreadPoolExecutor(max_workers=n_workers) as ex:
+        ex = ThreadPoolExecutor(max_workers=n_workers)
+        try:
             futuros = {
                 ex.submit(audio.renderizar_audio, origem, destino, preset_id): (chave, nome_arq)
                 for chave, nome_arq, origem, destino in a_renderizar
@@ -318,6 +322,12 @@ def reconciliar_links(nome: str) -> tuple[int, int, list[str]]:
                 if ok:
                     render_state[chave] = {"preset": preset_id, "hash": perfil, "file": nome_arq}
                     criados += 1
+        finally:
+            # Ctrl+C: o `with ThreadPoolExecutor` padrão esperaria TODAS as
+            # tarefas enfileiradas terminarem (centenas de renders de ~8s).
+            # cancel_futures descarta as que ainda não começaram, e o
+            # render_state abaixo preserva o que já foi concluído.
+            ex.shutdown(wait=True, cancel_futures=True)
 
     _salvar_render_state(nome, render_state)
     return criados, removidos, faltando_no_pool

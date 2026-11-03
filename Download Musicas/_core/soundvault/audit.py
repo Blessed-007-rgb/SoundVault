@@ -1,10 +1,10 @@
 import os
 
 from . import config
-from .console_log import console, RICH_OK, log
+from .console_log import console, RICH_OK
 from .playlist import parsear, nome_arquivo, checar_integridade, detectar_colisoes
 from . import playlists
-from .storage import carregar_cache, carregar_state, carregar_falhas
+from .storage import carregar_cache, carregar_state, carregar_falhas, entrada_cache_valida
 
 if RICH_OK:
     from rich.table import Table
@@ -47,11 +47,14 @@ def auditoria(nome_playlist: str | None = None):
     nomes_baixados = {info.get("name", "") for info in state.values() if isinstance(info, dict) and not info.get("skipped")}
     puladas = {info.get("name", "") for info in state.values() if isinstance(info, dict) and info.get("skipped")}
     faltando = [n for n in playlist_set if n not in nomes_baixados and n not in puladas]
-    removidas = [n for n in nomes_baixados if n and n not in playlist_set]
+    # Compara com a UNIÃO de todas as playlists (como o Sync faz): comparar só
+    # com a playlist auditada listava músicas de outras playlists como "serão
+    # deletadas no próximo Sync", o que não é verdade.
+    removidas = [n for n in nomes_baixados if n and n not in todas]
     puladas_removidas = [n for n in puladas if n and n not in playlist_set]
 
-    sem_url = [n for n in playlist_set if n not in cache or not cache[n].get("url")]
-    nomes_esperados = {nome_arquivo(*parsear(n)) for n in playlist_set}
+    # Inclui entradas com URL/ID corrompido, que o Sync re-busca sozinho.
+    sem_url = [n for n in playlist_set if not entrada_cache_valida(cache.get(n))]
     nomes_esperados_pool = {nome_arquivo(*parsear(n)) for n in todas}
     orfaos = disco - nomes_esperados_pool
 

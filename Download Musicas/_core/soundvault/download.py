@@ -1,4 +1,6 @@
+import hashlib
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -13,6 +15,14 @@ from .tags import gravar_tags
 _workers_ativos = 3
 _rate_limit_lock = threading.Lock()
 _rate_limit_hits = 0
+
+
+def resetar_contadores():
+    """Restaura workers e contagem de 429 ao estado inicial (início de cada Sync)."""
+    global _workers_ativos, _rate_limit_hits
+    with _rate_limit_lock:
+        _workers_ativos = config.WORKERS
+        _rate_limit_hits = 0
 
 
 def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str, str]:
@@ -40,7 +50,32 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
         video_id = extrair_video_id(url)
 
     if video_id and video_id in state:
-        return True, "ok", ""
+        _reg = state[video_id]
+        dono = _reg.get("name") if isinstance(_reg, dict) else None
+        if dono == chave or checar_integridade(destino):
+            return True, "ok", ""
+        # Outra música do playlist.txt usa o MESMO vídeo. Antes isto devolvia
+        # sucesso sem criar arquivo nem registro: o Sync dizia "ok" e a música
+        # ficava faltando pra sempre. Reaproveita o áudio já baixado pelo dono
+        # e registra esta música sob uma chave própria (state é indexado por
+        # video_id, que aqui já está ocupado).
+        arq_dono = config.DOWNLOAD_DIR / f"{nome_arquivo(*parsear(dono))}.mp3" if dono else None
+        if arq_dono and checar_integridade(arq_dono):
+            try:
+                shutil.copy2(arq_dono, destino)
+                gravar_tags(destino, artista, titulo, url_video=url)
+                chave_dup = f"dup_{video_id}_{hashlib.md5(chave.encode('utf-8')).hexdigest()[:8]}"
+                with _state_lock:
+                    state[chave_dup] = {
+                        "name": chave, "url": url, "hash": calcular_md5(destino),
+                        "downloaded_at": datetime.now().isoformat(), "duplicate_of": video_id,
+                    }
+                log.info(f"[DUP] '{chave}' reaproveitou o áudio de '{dono}' (mesmo vídeo {video_id})")
+                return True, "ok", ""
+            except OSError as e:
+                destino.unlink(missing_ok=True)
+                log.warning(f"[DUP] Falha ao reaproveitar áudio de '{dono}' para '{chave}': {e}")
+        # arquivo do dono ausente (ou cópia falhou): segue pro download normal
 
     if checar_integridade(destino):
         if video_id and video_id not in state:

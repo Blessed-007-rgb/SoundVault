@@ -58,15 +58,27 @@ def adquirir_lock():
             f.write(str(os.getpid()))
     except FileExistsError:
         cprint("\n[bold red]✗ Já existe uma execução em andamento (lock criado no mesmo instante).[/]")
-        raise LockError("Lock ativo (corrida)")
+        raise LockError("Lock ativo (corrida)") from None
+
+
+def _lock_e_meu() -> bool:
+    """True só se o arquivo de lock existe e foi criado por ESTE processo.
+    Sem essa checagem, uma segunda instância que recebeu LockError apagava
+    — ao sair, via atexit — o lock da primeira, que ainda estava rodando,
+    liberando a porta pra uma terceira execução simultânea."""
+    try:
+        return int(config.LOCK_FILE.read_text().strip().split(":")[0]) == os.getpid()
+    except (OSError, ValueError, IndexError):
+        return False
 
 
 def liberar_lock():
-    config.LOCK_FILE.unlink(missing_ok=True)
+    if _lock_e_meu():
+        config.LOCK_FILE.unlink(missing_ok=True)
 
 
 def _liberar_lock_atexit():
-    config.LOCK_FILE.unlink(missing_ok=True)
+    liberar_lock()
 
 
 atexit.register(_liberar_lock_atexit)

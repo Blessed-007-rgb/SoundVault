@@ -88,7 +88,11 @@ def main():
                 elif "--fix-tags"      in args: fix_tags()
                 elif "--clean"         in args: clean()
                 elif "--duplicatas"    in args: limpar_duplicatas()
-                elif "--duplicatas-pl" in args: limpar_duplicatas_playlist()
+                elif "--duplicatas-pl" in args:
+                    if not nome_playlist_cli:
+                        print("Uso: --duplicatas-pl --playlist NomeDaPlaylist")
+                        sys.exit(1)
+                    limpar_duplicatas_playlist(nome_playlist_cli)
                 elif "--reset-puladas" in args: resetar_skips_copyright()
                 elif "--validate"      in args: exibir_validacao_cache()
                 elif "--help"          in args: mostrar_help()
@@ -104,6 +108,12 @@ def main():
                 log.warning(f"Operação CLI {args} interrompida via Ctrl+C")
             input("\n  Pressione Enter para fechar...")
 
+    except KeyboardInterrupt:
+        # Rede de segurança: qualquer Ctrl+C que escape dos tratamentos
+        # locais (inputs soltos, migração inicial, pausa final do CLI)
+        # encerra limpo em vez de mostrar traceback e "ERRO FATAL" no .bat.
+        print("\n  Encerrado pelo usuário (Ctrl+C).")
+        sys.exit(130)
     except Exception:
         _tb = _tb_mod.format_exc()
         try:

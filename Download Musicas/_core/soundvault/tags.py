@@ -1,6 +1,4 @@
-import os
-import re
-import subprocess
+import urllib.request
 from pathlib import Path
 
 try:
@@ -10,25 +8,27 @@ except ImportError:
     MUTAGEN_OK = False
 
 from .console_log import log
+from .playlist import extrair_video_id
 
 
 def _baixar_thumbnail(url_video: str) -> bytes | None:
     """Baixa a thumbnail do YouTube e retorna os bytes da imagem."""
-    m = re.search(r"(?:v=|youtu\.be/)([\w-]{11})", url_video)
-    if not m:
+    vid = extrair_video_id(url_video)
+    if not vid:
         return None
-    vid = m.group(1)
+    # urllib em vez de `yt-dlp -o -`: o yt-dlp não baixa URL de imagem direta
+    # (trata img.youtube.com/vi/... como página e responde HTTP 404), então
+    # nenhuma capa chegava a ser embutida — falha silenciosa em 100% dos MP3.
     for qualidade in ("maxresdefault", "hqdefault", "mqdefault", "default"):
         thumb_url = f"https://img.youtube.com/vi/{vid}/{qualidade}.jpg"
         try:
-            result = subprocess.run(
-                ["yt-dlp", "--quiet", "--no-warnings", "-o", "-", thumb_url],
-                capture_output=True, timeout=10,
-                **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {})
-            )
-            if result.returncode == 0 and len(result.stdout) > 1000:
-                return result.stdout
-        except Exception:
+            req = urllib.request.Request(thumb_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                dados = resp.read()
+            if len(dados) > 1000:
+                return dados
+        except Exception as e:
+            log.debug(f"Thumbnail {qualidade} indisponível para {vid}: {e}")
             continue
     return None
 
@@ -46,16 +46,19 @@ def gravar_tags(caminho: Path, artista: str, titulo: str, url_video: str = ""):
         tags["TPE1"] = TPE1(encoding=3, text=artista)
         tags["TALB"] = TALB(encoding=3, text=artista)
 
-        if "APIC:" not in tags and url_video:
+        # A chave real do frame é "APIC:<descrição>" (ex.: "APIC:Cover"),
+        # então `"APIC:" not in tags` era sempre verdadeiro e cada regravação
+        # empilhava uma capa duplicada. getall() acha qualquer APIC.
+        if not tags.getall("APIC") and url_video:
             img_bytes = _baixar_thumbnail(url_video)
             if img_bytes:
-                tags["APIC:"] = APIC(
+                tags.add(APIC(
                     encoding=3,
                     mime="image/jpeg",
                     type=3,
                     desc="Cover",
                     data=img_bytes,
-                )
+                ))
                 log.debug(f"Capa embutida: {caminho.name}")
 
         tags.save(str(caminho), v2_version=3)

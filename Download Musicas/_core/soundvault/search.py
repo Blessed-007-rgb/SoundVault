@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 
 from . import config
 from .playlist import parsear
+from .storage import carregar_cache
 from .console_log import log
 
 # Termos que só são aceitos no resultado se já estiverem no título original —
@@ -21,12 +22,19 @@ SCORE_MIN_ARTISTA = 35.0
 SCORE_BOM_O_SUFICIENTE = 70.0  # encontrado isso, não precisa tentar query mais ampla
 
 
-def _normalizar(texto: str) -> str:
+def _normalizar(texto: str, remover_parenteses: bool = True) -> str:
     texto = texto.lower()
     texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
-    texto = re.sub(r"\(.*?\)|\[.*?\]", " ", texto)  # remove "(Official Video)", "(feat. X)" etc.
+    if remover_parenteses:
+        texto = re.sub(r"\(.*?\)|\[.*?\]", " ", texto)  # remove "(Official Video)", "(feat. X)" etc.
     texto = re.sub(r"[^a-z0-9 ]", " ", texto)
     return re.sub(r"\s+", " ", texto).strip()
+
+
+def _contem_palavra(texto: str, termo: str) -> bool:
+    """Busca `termo` como palavra inteira ("live" não casa com "alive",
+    "cover" não casa com "discover", "dj" não casa com "adjetivo")."""
+    return bool(termo) and re.search(rf"\b{re.escape(termo)}\b", texto) is not None
 
 
 def _similaridade(a: str, b: str) -> float:
@@ -62,9 +70,15 @@ def _pontuar_candidato(artista: str, titulo: str, entry: dict) -> float | None:
     if not video_norm:
         return None
 
+    # A checagem de termos proibidos usa o texto COM o conteúdo de
+    # parênteses/colchetes: "(Remix)", "(Live)", "[Cover]" é exatamente
+    # onde as versões alternativas se declaram, e _normalizar() padrão
+    # apagava tudo isso antes — a penalidade nunca era aplicada.
+    video_bruto = _normalizar(titulo_video, remover_parenteses=False)
+    titulo_bruto = _normalizar(titulo, remover_parenteses=False)
     penalidade = 0.0
     for palavra in PALAVRAS_PROIBIDAS:
-        if palavra in video_norm and palavra not in titulo_norm:
+        if _contem_palavra(video_bruto, palavra) and not _contem_palavra(titulo_bruto, palavra):
             penalidade += 25.0
 
     # Compara o título sozinho e também "Artista Título" concatenado —
@@ -84,8 +98,8 @@ def _pontuar_candidato(artista: str, titulo: str, entry: dict) -> float | None:
         score_artista = max(
             score_artista,
             _similaridade(a, uploader_norm),
-            100.0 if a and a in video_norm else 0.0,
-            90.0 if a and a in uploader_norm else 0.0,
+            100.0 if _contem_palavra(video_norm, a) else 0.0,
+            90.0 if _contem_palavra(uploader_norm, a) else 0.0,
         )
 
     if score_titulo < SCORE_MIN_TITULO or score_artista < SCORE_MIN_ARTISTA:
@@ -123,6 +137,19 @@ def buscar_ytmusic(chave: str) -> str | None:
     melhor_score = -1.0
     melhor_titulo_video = ""
 
+    # Vídeos que o cache já atribui a OUTRA música de título diferente: duas
+    # faixas distintas não podem ser o mesmo vídeo (o sync_state é indexado
+    # por video_id e a segunda ficaria sem arquivo). Títulos iguais são
+    # aceitos — são variantes do mesmo nome (ex.: lista de artistas diferente).
+    titulo_norm_pedido = _normalizar(titulo)
+    ocupados: dict[str, str] = {}
+    try:
+        for nome_c, dados_c in carregar_cache().items():
+            if nome_c != chave and isinstance(dados_c, dict) and dados_c.get("id"):
+                ocupados[dados_c["id"]] = nome_c
+    except Exception as e:
+        log.debug(f"buscar_ytmusic: não foi possível ler o cache de IDs ocupados: {e}")
+
     for query in queries:
         try:
             from yt_dlp import YoutubeDL
@@ -137,6 +164,10 @@ def buscar_ytmusic(chave: str) -> str | None:
             vid = entry.get("id", "")
             uploader = (entry.get("uploader", "") or entry.get("channel", "")).lower()
             if not vid or "vevo" in uploader:
+                continue
+            dono = ocupados.get(vid)
+            if dono and _normalizar(parsear(dono)[1]) != titulo_norm_pedido:
+                log.debug(f"buscar_ytmusic: vídeo {vid} já pertence a '{dono}' — ignorado para '{chave}'")
                 continue
             score = _pontuar_candidato(artista, titulo, entry)
             if score is not None and score > melhor_score:

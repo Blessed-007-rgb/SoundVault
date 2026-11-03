@@ -422,7 +422,7 @@ def menu():
                     sincronizar(alvo, apenas_falhas=True)
             elif opcao == "3":
                 alvo = escolher_playlist(permitir_todas=False)
-                if alvo != "__cancelar__":
+                if alvo and alvo != "__cancelar__":
                     limpar_duplicatas_playlist(alvo)
             elif opcao == "4": limpar_duplicatas()
             elif opcao == "5":
@@ -457,6 +457,11 @@ def menu():
         # break` dentro do try acima já encerrou o loop antes de chegar
         # neste ponto.
         log.debug(f"Menu aguardando Enter após opção {opcao}")
-        input("\n  Pressione Enter para voltar ao menu...")
+        try:
+            input("\n  Pressione Enter para voltar ao menu...")
+        except (KeyboardInterrupt, EOFError):
+            # Ctrl+C (ou entrada fechada) na pausa final só volta ao menu —
+            # esse input() ficava fora de qualquer try e vazava traceback.
+            print()
 
     cprint("[bold green]✓ Sessão encerrada com sucesso.[/]" if RICH_OK else "\n  Sessão encerrada.")
