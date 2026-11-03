@@ -112,6 +112,10 @@ ERROS_REDE = [
 ERROS_PERMANENTES = [
     "copyright claim",
     "video unavailable",
+    "this video is unavailable",
+    "this video is not available",
+    "video is not available",
+    "video is no longer available",
     "this video has been removed",
     "private video",
     "account associated with this video has been terminated",
@@ -128,7 +132,6 @@ ERROS_FORMATO = [
 
 ERROS_AUTH = [
     "sign in to confirm",
-    "http error 403",
     "requires authentication",
     "please sign in",
     "music premium",

@@ -7,7 +7,7 @@ from .lock import LockError
 from .sync import sincronizar
 from .dedupe import limpar_duplicatas_playlist, limpar_duplicatas, clean
 from .audit import auditoria
-from .cache_maint import exibir_validacao_cache
+from .cache_maint import exibir_validacao_cache, definir_url_manual
 from .rebuild import rebuild, fix_tags, reaplicar_audio
 
 if RICH_OK:
@@ -274,6 +274,7 @@ def mostrar_help():
         t2.add_row("8 · Reaplicar Áudio", "Use após mudar preset de uma playlist ou o código de EQ.\nRe-renderiza as playlists existentes com o preset de cada uma.")
         t2.add_row("9 · Corrigir Metadados", "Use se músicas aparecerem sem nome/artista no player.\nRegrava título, artista e capa em todos os .mp3.")
         t2.add_row("E · Configurar EQ", "Use pra mudar o preset de som de uma playlist.\nPadrão, Fone de Ouvido, Caixa de Som ou Som Automotivo.")
+        t2.add_row("U · Adicionar URL Manual", "Use quando a busca automática não achou a música.\nCole o link do YouTube de cada uma; depois rode Sync.")
         t2.add_row("P · Resetar Puladas", "Use quando quiser retentar músicas puladas por copyright.\nLista as puladas, escolha quais liberar — depois rode Sync.")
         t2.add_row("R · Registrar MP3s do Disco", "Use ao migrar de máquina ou copiar músicas manualmente.\nImporta os .mp3 existentes para o sistema não baixar de novo.")
         t2.add_row("H · Help", "Esta tela.")
@@ -309,6 +310,7 @@ MENU = [
     ("8", "Reaplicar Áudio",        "Re-renderiza todas as playlists com o preset de cada uma"),
     ("9", "Corrigir Metadados",     "Grava título, artista e capa nos .mp3 existentes"),
     ("E", "Configurar EQ",          "Escolhe o preset de EQ/loudness de uma playlist"),
+    ("U", "Adicionar URL Manual",   "Cola o link do YouTube de músicas não encontradas"),
     ("P", "Resetar Puladas",        "Lista músicas puladas por copyright e libera para retry"),
     ("R", "Registrar MP3s do Disco","Importa .mp3 existentes que o sistema não conhece"),
     ("G", "Gerenciar Playlists",    "Criar, listar e remover playlists do perfil"),
@@ -320,7 +322,7 @@ MENU = [
 # única seção, na mesma ordem em que está definido em MENU.
 GRUPOS_MENU = [
     ("SINCRONIZAÇÃO", ["1", "2"]),
-    ("MANUTENÇÃO", ["3", "4", "5", "6", "7", "8", "9", "E", "P", "R"]),
+    ("MANUTENÇÃO", ["3", "4", "5", "6", "7", "8", "9", "E", "U", "P", "R"]),
     ("SISTEMA", ["G", "H", "0"]),
 ]
 
@@ -432,6 +434,7 @@ def menu():
             elif opcao == "8": reaplicar_audio()
             elif opcao == "9": fix_tags()
             elif opcao == "E": configurar_eq()
+            elif opcao == "U": definir_url_manual()
             elif opcao == "P": resetar_skips_copyright()
             elif opcao == "R": rebuild()
             elif opcao == "G": gerenciar_playlists()

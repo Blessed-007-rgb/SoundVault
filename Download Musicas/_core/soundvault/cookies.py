@@ -101,9 +101,11 @@ def solicitar_renovacao_cookies():
             from rich.panel import Panel
             console.print(Panel(
                 "[bold yellow]⚠  Cookie do YouTube expirado![/]\n\n"
-                "  1. O YouTube foi aberto no seu browser\n"
-                "  2. Faça login se necessário\n"
-                "  3. Use a extensão [bold]'Get cookies.txt LOCALLY'[/] para exportar\n"
+                "  1. Abra uma [bold]janela anônima/privada[/] e entre em youtube.com\n"
+                "     [dim](o YouTube troca os cookies de abas normais em minutos —\n"
+                "      por isso cookies exportados dali 'expiram' logo)[/]\n"
+                "  2. Nessa mesma aba, abra youtube.com/robots.txt e exporte os cookies\n"
+                "  3. Use a extensão [bold]'Get cookies.txt LOCALLY'[/] e feche a janela anônima\n"
                 "  4. Salve como [cyan]cookies.txt[/] na pasta do perfil:\n"
                 f"     [dim]{config.COOKIES_FILE}[/]\n\n"
                 "  [dim]Músicas que já falharam por causa disso nesta execução não são\n"

@@ -35,6 +35,14 @@ def _similaridade(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio() * 100
 
 
+def _separar_artistas(artista: str) -> list[str]:
+    """'A,B,C' / 'A & B' / 'A feat. B' -> ['A', 'B', 'C']. O playlist.txt
+    costuma trazer TODOS os artistas separados por vírgula, mas o uploader
+    do vídeo normalmente é só um deles (ou o canal do DJ/produtor)."""
+    partes = re.split(r"\s*(?:,|;|&|\bfeat\.?\s|\bft\.?\s|\sx\s)\s*", artista, flags=re.IGNORECASE)
+    return [p.strip() for p in partes if p and p.strip()] or [artista.strip()]
+
+
 def _pontuar_candidato(artista: str, titulo: str, entry: dict) -> float | None:
     """
     Retorna um score 0-100 de confiança de que `entry` é a música
@@ -46,7 +54,8 @@ def _pontuar_candidato(artista: str, titulo: str, entry: dict) -> float | None:
     uploader = entry.get("uploader", "") or entry.get("channel", "") or ""
 
     titulo_norm = _normalizar(titulo)
-    artista_norm = _normalizar(artista)
+    artistas_norm = [a for a in (_normalizar(x) for x in _separar_artistas(artista)) if a]
+    artista_norm = artistas_norm[0] if artistas_norm else _normalizar(artista)
     video_norm = _normalizar(titulo_video)
     uploader_norm = _normalizar(uploader)
 
@@ -64,11 +73,20 @@ def _pontuar_candidato(artista: str, titulo: str, entry: dict) -> float | None:
         _similaridade(titulo_norm, video_norm),
         _similaridade(f"{artista_norm} {titulo_norm}", video_norm),
     )
+    # Título do vídeo costuma trazer texto extra ("(LETRA)", "· MC X · DJ Y").
+    # Se o título pedido aparece inteiro dentro dele, é um bom sinal.
+    if len(titulo_norm) >= 4 and re.search(rf"\b{re.escape(titulo_norm)}\b", video_norm):
+        score_titulo = max(score_titulo, 90.0)
 
-    score_artista = max(
-        _similaridade(artista_norm, uploader_norm),
-        100.0 if artista_norm and artista_norm in video_norm else 0.0,
-    )
+    # Basta UM dos artistas bater com o uploader ou aparecer no título do vídeo.
+    score_artista = 0.0
+    for a in (artistas_norm or [artista_norm]):
+        score_artista = max(
+            score_artista,
+            _similaridade(a, uploader_norm),
+            100.0 if a and a in video_norm else 0.0,
+            90.0 if a and a in uploader_norm else 0.0,
+        )
 
     if score_titulo < SCORE_MIN_TITULO or score_artista < SCORE_MIN_ARTISTA:
         return None
@@ -87,10 +105,15 @@ def buscar_ytmusic(chave: str) -> str | None:
     (histórico de bloqueio por copyright nesse fluxo de download).
     """
     artista, titulo = parsear(chave)
+    # Com 5+ artistas na mesma string a busca fica diluída e o YouTube não
+    # acha nada — usa só os 2 primeiros nas queries (o scoring usa todos).
+    artistas_q = " ".join(_separar_artistas(artista)[:2])
     queries = [
-        f"ytsearch5:{artista} {titulo} official audio",
-        f"ytsearch5:{artista} {titulo} audio",
-        f"ytsearch3:{artista} {titulo}",
+        f"ytsearch5:{artistas_q} {titulo} official audio",
+        f"ytsearch5:{artistas_q} {titulo} audio",
+        f"ytsearch5:{artistas_q} {titulo}",
+        f"ytsearch5:{titulo} {_separar_artistas(artista)[0]}",
+        f"ytsearch5:{titulo}",
     ]
     opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
     if config.COOKIES_FILE.exists():
@@ -107,7 +130,7 @@ def buscar_ytmusic(chave: str) -> str | None:
                 info = ydl.extract_info(query, download=False)
                 entries = info.get("entries", []) if info else []
         except Exception as e:
-            log.debug(f"buscar_ytmusic falhou para query '{query}': {e}")
+            log.warning(f"buscar_ytmusic falhou para query '{query}': {str(e)[:200]}")
             continue
 
         for entry in entries:
