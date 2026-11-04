@@ -317,13 +317,13 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
                 t.add_column(style="dim", width=24)
                 t.add_column(style="bold cyan", justify="right", width=8)
                 t.add_row("Total na playlist", str(len(playlist_alvo)))
-                t.add_row("Já concluídas", str(len(nomes_concluidos)))
+                t.add_row("Já concluídas", str(len(nomes_concluidos & set(playlist_alvo))))
                 t.add_row("Para baixar", str(len(pendentes)))
                 if removidos:
                     t.add_row("Removidas do disco", f"[yellow]{len(removidos)}[/]")
                 if sem_url:
                     t.add_row("Sem URL no cache", f"[yellow]{len(sem_url)}[/]")
-                console.print(Panel(t, title="[bold]SYNC[/]", border_style="blue"))
+                console.print(Panel(t, title="[bold]SYNC[/]", border_style="blue", expand=False))
             else:
                 print(f"\nTotal na playlist : {len(playlist_alvo)}")
                 print(f"Já concluídas     : {len(nomes_concluidos)}")

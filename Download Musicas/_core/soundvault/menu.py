@@ -1,6 +1,6 @@
 
-from . import config, eq_presets, playlists
-from .console_log import limpar_tela, console, RICH_OK, cprint, log, Table, Panel, Prompt, Group, Text, box
+from . import config, entrada, eq_presets, playlists
+from .console_log import limpar_tela, console, RICH_OK, cprint, log, Table, Panel, Prompt, Align, box
 from .storage import carregar_state, salvar_state, carregar_historico
 from .lock import LockError
 from .sync import sincronizar
@@ -385,7 +385,9 @@ GRUPOS_MENU = [
 ]
 
 
-def exibir_menu():
+def _desenhar_menu(digitado: str = "") -> None:
+    """Limpa a tela e desenha o menu centralizado na largura ATUAL, mais o prompt (com o
+    que já foi digitado, sem quebra de linha no fim)."""
     limpar_tela()
     if RICH_OK:
         hist = carregar_historico()
@@ -419,38 +421,56 @@ def exibir_menu():
             ))
 
         por_num = {num: (nome, desc) for num, nome, desc in MENU}
-        secoes = []
+        # Uma tabela só, com um cabeçalho por seção: cabe em ~24 linhas. Antes eram várias
+        # tabelas com borda (~40 linhas), que estouravam a janela do cmd e rolavam a tela.
+        t = Table(box=box.SIMPLE, show_header=False, show_edge=False, padding=(0, 1), expand=False)
+        t.add_column(style="bold cyan", width=3, justify="center")
+        t.add_column(style="bold white", no_wrap=True)
+        t.add_column(style="dim")
         for i, (titulo, nums) in enumerate(GRUPOS_MENU):
             if i > 0:
-                secoes.append(Text(""))
-            secoes.append(Text(f"  {titulo}", style="bold dim"))
-            t = Table(box=box.ROUNDED, show_header=False, padding=(0, 2), expand=False, border_style="dim")
-            t.add_column(style="bold cyan", width=3)
-            t.add_column(style="bold white", width=26)
-            t.add_column(style="dim", width=44)
+                t.add_section()
+            t.add_row("", f"[bold blue]{titulo}[/]", "")
             for num in nums:
                 nome, desc = por_num[num]
                 t.add_row(num, nome, desc)
-            secoes.append(t)
-        console.print(Panel(
-            Group(*secoes),
-            title=f"[bold blue]  SOUNDVAULT  [/]  [dim]perfil: {config.BASE_DIR.name}[/]",
-            subtitle=f"[dim]{config.DOWNLOAD_DIR}[/]  ·  {sub.strip()}",
-            padding=(1, 2),
-        ))
-        # Bug 23: aceita escolha em qualquer caixa — choices inclui
-        # maiúsculas e minúsculas, e a resposta é normalizada para
-        # maiúsculo antes de retornar.
-        todas_choices = [o[0] for o in MENU] + [o[0].lower() for o in MENU]
-        resposta = Prompt.ask("\n  [bold cyan]Escolha[/]", choices=todas_choices, default="1")
-        return resposta.upper()
+        painel = Panel(
+            t,
+            title=f"[bold blue] SOUNDVAULT [/] [dim]perfil: {config.BASE_DIR.name}[/]",
+            subtitle=sub.strip(),
+            border_style="blue",
+            padding=(0, 2),
+            expand=False,
+        )
+        # Centraliza conforme a largura ATUAL da janela (maximizada = mais margem; estreita =
+        # o painel encolhe e as descrições quebram linha). Vale a cada redesenho do menu.
+        console.print(Align.center(painel))
+        largura = min(console.width, console.measure(painel).maximum)
+        margem = " " * max(0, (console.width - largura) // 2 + 2)
+        console.print("\n" + margem + "[bold cyan]Escolha[/] [magenta](1)[/]: " + digitado, end="")
     else:
         print("\n" + "=" * 44)
         print("   SOUNDVAULT")
         print("=" * 44)
         for num, nome, desc in MENU:
             print(f"  {num} - {nome}")
-        return input("\nEscolha: ").strip().upper()
+
+
+def exibir_menu():
+    # Bug 23: aceita escolha em qualquer caixa — a resposta é normalizada para maiúsculo.
+    validas = [o[0] for o in MENU]
+    if RICH_OK and entrada.ao_vivo_disponivel():
+        # Lê tecla a tecla e redesenha se a janela for maximizada/redimensionada.
+        return entrada.ler_escolha(validas, "1", _desenhar_menu)
+    _desenhar_menu()
+    if RICH_OK:
+        # Sem leitura ao vivo (pipe, Linux...): o prompt já foi impresso por _desenhar_menu.
+        while True:
+            resposta = (input() or "1").strip().upper()
+            if resposta in validas:
+                return resposta
+            _desenhar_menu()
+    return input("\nEscolha: ").strip().upper()
 
 
 def menu():

@@ -70,3 +70,37 @@ def _chamadas_os_system(arquivo: Path):
 @pytest.mark.parametrize("arquivo", sorted(PACOTE.glob("*.py")), ids=lambda p: p.name)
 def test_nao_sobrou_os_system_no_pacote(arquivo):
     assert _chamadas_os_system(arquivo) == [], f"{arquivo.name} ainda usa os.system"
+
+
+def test_no_windows_usa_a_api_do_console_e_nao_o_clear_do_rich(monkeypatch):
+    """Regressão: no conhost sem VT o clear do rich deixava o texto antigo na tela."""
+    monkeypatch.setattr(cl.sys, "stdout", Tty())
+    monkeypatch.setattr(cl.os, "name", "nt")
+    monkeypatch.setattr(cl, "_limpar_console_windows", lambda: True)
+    limpou = []
+    monkeypatch.setattr(cl.console, "clear", lambda *a, **k: limpou.append(1))
+    cl.limpar_tela()
+    assert limpou == []
+
+
+def test_se_a_api_falhar_cai_no_clear_do_rich(monkeypatch):
+    monkeypatch.setattr(cl.sys, "stdout", Tty())
+    monkeypatch.setattr(cl.os, "name", "nt")
+    monkeypatch.setattr(cl, "_limpar_console_windows", lambda: False)
+    limpou = []
+    monkeypatch.setattr(cl.console, "clear", lambda *a, **k: limpou.append(1))
+    cl.limpar_tela()
+    assert limpou == [1]
+
+
+def test_api_do_console_sem_console_real_devolve_false():
+    assert cl._limpar_console_windows() in (True, False)    # sob pytest (pipe) não pode lançar
+
+
+def test_chamadas_da_api_do_console_declaram_argtypes():
+    """Regressão: sem argtypes o ctypes passou o " " como ponteiro e encheu a tela de lixo."""
+    import inspect
+    fonte = inspect.getsource(cl._limpar_console_windows)
+    for api in ("FillConsoleOutputCharacterW", "FillConsoleOutputAttribute",
+                "SetConsoleCursorPosition", "GetConsoleScreenBufferInfo", "GetStdHandle"):
+        assert f"{api}.argtypes" in fonte, api

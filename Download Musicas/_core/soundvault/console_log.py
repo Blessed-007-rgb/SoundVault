@@ -26,8 +26,10 @@ try:
     from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TimeRemainingColumn, TextColumn  # noqa: F401
     from rich.prompt import Prompt  # noqa: F401
     from rich.text import Text  # noqa: F401
+    from rich.align import Align  # noqa: F401
     from rich import box  # noqa: F401
     RICH_OK = True
+
 except ImportError:
     RICH_OK = False
 
@@ -41,7 +43,7 @@ except ImportError:
 
     Console = Group = Table = Panel = Progress = SpinnerColumn = _SemRich  # type: ignore
     BarColumn = MofNCompleteColumn = TimeElapsedColumn = TimeRemainingColumn = TextColumn = _SemRich  # type: ignore
-    Prompt = Text = box = _SemRich  # type: ignore
+    Prompt = Text = box = Align = _SemRich  # type: ignore
 
 from . import config
 from .procutil import sem_janela
@@ -196,6 +198,55 @@ def init_logging():
     _logging_inicializado = True
 
 
+def _limpar_console_windows() -> bool:
+    """Apaga o buffer do console clássico do Windows pela API (o mesmo que o `cls` faz).
+    O clear do rich não funciona no conhost sem VT: o cursor volta ao topo mas o texto
+    antigo fica e o menu novo é desenhado por cima. Devolve False se não conseguiu."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _Coord(ctypes.Structure):
+            _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+        class _Rect(ctypes.Structure):
+            _fields_ = [("L", ctypes.c_short), ("T", ctypes.c_short),
+                        ("R", ctypes.c_short), ("B", ctypes.c_short)]
+
+        class _Info(ctypes.Structure):
+            _fields_ = [("size", _Coord), ("cursor", _Coord), ("attr", wintypes.WORD),
+                        ("window", _Rect), ("maximum", _Coord)]
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Sem argtypes o ctypes passa o " " como ponteiro e o buffer enche de lixo.
+        k32.GetStdHandle.argtypes = [wintypes.DWORD]
+        k32.GetStdHandle.restype = wintypes.HANDLE
+        k32.GetConsoleScreenBufferInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Info)]
+        k32.GetConsoleScreenBufferInfo.restype = wintypes.BOOL
+        k32.FillConsoleOutputCharacterW.argtypes = [wintypes.HANDLE, wintypes.WCHAR, wintypes.DWORD,
+                                                     _Coord, ctypes.POINTER(wintypes.DWORD)]
+        k32.FillConsoleOutputCharacterW.restype = wintypes.BOOL
+        k32.FillConsoleOutputAttribute.argtypes = [wintypes.HANDLE, wintypes.WORD, wintypes.DWORD,
+                                                    _Coord, ctypes.POINTER(wintypes.DWORD)]
+        k32.FillConsoleOutputAttribute.restype = wintypes.BOOL
+        k32.SetConsoleCursorPosition.argtypes = [wintypes.HANDLE, _Coord]
+        k32.SetConsoleCursorPosition.restype = wintypes.BOOL
+        h = k32.GetStdHandle(wintypes.DWORD(-11 & 0xFFFFFFFF))
+        info = _Info()
+        if not k32.GetConsoleScreenBufferInfo(h, ctypes.byref(info)):
+            return False
+        celulas = info.size.X * info.size.Y
+        escritas = wintypes.DWORD()
+        origem = _Coord(0, 0)
+        if not k32.FillConsoleOutputCharacterW(h, " ", celulas, origem, ctypes.byref(escritas)):
+            return False
+        k32.FillConsoleOutputAttribute(h, info.attr, celulas, origem, ctypes.byref(escritas))
+        k32.SetConsoleCursorPosition(h, origem)
+        return True
+    except Exception:
+        return False
+
+
 def limpar_tela() -> None:
     """Limpa o terminal. No lugar do antigo os.system("cls"): não abre subprocesso e só
     age em terminal interativo (em pipe/arquivo/tarefa agendada não escreve nada)."""
@@ -203,6 +254,8 @@ def limpar_tela() -> None:
         if not sys.stdout.isatty():
             return
     except (AttributeError, ValueError):
+        return
+    if os.name == "nt" and _limpar_console_windows():
         return
     if RICH_OK:
         console.clear()
