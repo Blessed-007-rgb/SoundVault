@@ -41,13 +41,15 @@ Convenções que não são óbvias lendo um arquivo só:
 - JSON de estado é gravado com `storage._escrever_json_atomico` (tmp + `os.replace`); não use `write_text` direto.
 - `console_log.py` é a **única** fonte do `rich` (`Table`, `Panel`, `Progress`, `box`, `console`...) e traz substitutos quando ele não está instalado; não importe `rich` direto nos outros módulos. Todo uso de rich fica sob `if RICH_OK:`.
 - Processos externos: use `**procutil.sem_janela()` nos `subprocess` (evita janela de console no Windows).
+- Antes de baixar/renderizar, `sync._espaco_suficiente` consulta `disco.avaliar` (downloads + `playlists.renders_pendentes`, ×`MARGEM`): sobra pouco só avisa; não cabe pergunta (padrão Não; EOF = cancela).
+- Terminal: use `console_log.limpar_tela()` (nunca `os.system`; um teste varre o pacote por isso) e deixe os símbolos ✓ ⚠ ✗ ⊘ nas strings — `console_log.configurar_simbolos()` (chamado no `main()`) troca por ASCII no conhost antigo; spinners do rich usam `nome_do_spinner()`. `SOUNDVAULT_ASCII=0/1` força.
 - Progresso do render: `reconciliar_links(nome, cb)` chama `cb(feito, total)`; a UI é `progresso.barra_de_render(...)`. O `rich` só aceita um display ao vivo por vez, então não aninhe essa barra dentro de outro `Progress`.
 - Ações destrutivas pedem confirmação com padrão **Não**. Ctrl+C nunca deve virar traceback (ver `test_ctrl_c.py`).
 - Pastas/arquivos de dados do usuário (`Main/`, `cookies.txt`, `playlist_cache.json`, `sync_state.json`, `Musicas/`, `playlists/`) estão no `.gitignore` e são a biblioteca real dele: **não rode Sync/render/limpeza nela sem pedido explícito**, e nunca commite `cookies.txt`.
 
 ## Testes
 
-`tests/conftest.py` aponta `SOUNDVAULT_ROOT_DIR` para uma pasta temporária **antes** de importar `soundvault.config` (que cria pastas no import) e a fixture `perfil` isola cada teste num perfil novo. Testes de áudio geram MP3 com `ffmpeg -f lavfi` e se pulam sem ffmpeg. Ao mudar comportamento, adicione teste de regressão.
+`tests/conftest.py` aponta `SOUNDVAULT_ROOT_DIR` para uma pasta temporária **antes** de importar `soundvault.config` (que cria pastas no import) e a fixture `perfil` isola cada teste num perfil novo. Testes de áudio geram MP3 com `ffmpeg -f lavfi` e se pulam sem ffmpeg. `tests/test_sync_e2e.py` roda o `sincronizar` inteiro com o yt-dlp simulado (`YtDlpFalso` substitui `subprocess.run` só para o yt-dlp; ffmpeg/mutagen são reais): ao mexer no Sync, rode-o. Em testes, faça o patch de `sys.stdout` DENTRO do teste (o pytest o reinstala ao entrar na fase de execução, descartando patch de fixture). Ao mudar comportamento, adicione teste de regressão.
 
 ## Edição de arquivos
 

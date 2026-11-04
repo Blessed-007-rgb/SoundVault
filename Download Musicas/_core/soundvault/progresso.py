@@ -16,7 +16,7 @@ from typing import Any
 
 from .console_log import (
     BarColumn, MofNCompleteColumn, Progress, RICH_OK, SpinnerColumn, TextColumn,
-    TimeElapsedColumn, TimeRemainingColumn, console,
+    TimeElapsedColumn, TimeRemainingColumn, console, nome_do_spinner,
 )
 
 
@@ -31,7 +31,7 @@ class _Barra:
         if RICH_OK:
             if self._prog is None:
                 self._prog = Progress(
-                    SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+                    SpinnerColumn(nome_do_spinner()), TextColumn("[bold blue]{task.description}"),
                     BarColumn(bar_width=34), MofNCompleteColumn(), TimeElapsedColumn(), TimeRemainingColumn(),
                     console=console, transient=True,
                 )

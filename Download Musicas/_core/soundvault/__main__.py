@@ -2,7 +2,7 @@ import sys
 import traceback as _tb_mod
 from datetime import datetime
 
-from . import config
+from . import config, console_log
 from .console_log import console, RICH_OK, init_logging, log, cprint, Panel
 
 
@@ -14,6 +14,7 @@ def main():
             print("[AVISO] 'rich' não instalado — interface simplificada.")
             print("        Instale com: pip install rich\n")
 
+        console_log.configurar_simbolos()      # troca ✓ ⚠ ✗ por ASCII no cmd.exe antigo
         args = sys.argv[1:]
 
         if "--profile" in args:

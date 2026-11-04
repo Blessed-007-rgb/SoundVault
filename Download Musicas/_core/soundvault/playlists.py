@@ -241,6 +241,29 @@ def ordem_round_robin(playlist: list[str]) -> list[str]:
     return resultado
 
 
+def renders_pendentes(nome: str) -> int:
+    """Quantas músicas da playlist ainda precisam ser renderizadas (só lê, não mexe em nada).
+
+    Conta a música sem registro no render_state, com preset/receita diferente ou cujo
+    arquivo sumiu. Quem só mudou de posição (vai ser renomeada) NÃO conta, nem linha repetida."""
+    if not config.NORMALIZAR_VOLUME:
+        return 0
+    pasta = caminho_playlist_musicas(nome)
+    preset_id = ler_preset(nome)
+    perfil = audio.perfil_atual(preset_id)
+    estado = _ler_render_state(nome)
+    pendentes = 0
+    for chave in dict.fromkeys(carregar_playlist(nome)):
+        e = estado.get(chave)
+        pronto = bool(
+            e and e.get("preset") == preset_id and e.get("hash") == perfil
+            and e.get("file") and (pasta / e["file"]).is_file()
+        )
+        if not pronto:
+            pendentes += 1
+    return pendentes
+
+
 def reconciliar_links(nome: str, ao_progredir: Callable[[int, int], None] | None = None) -> tuple[int, int, list[str]]:
     """
     Garante que playlists\\<nome>\\Musicas\\ tem exatamente um arquivo por

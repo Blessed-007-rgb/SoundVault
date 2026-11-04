@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import logging
@@ -57,6 +58,73 @@ class _ConsoleSimples:
 console: Any = Console() if RICH_OK else _ConsoleSimples()
 log = logging.getLogger("soundvault")
 _logging_inicializado = False
+
+
+# ── Símbolos para consoles antigos ──────────────────────────────────────────
+# O console clássico do Windows (cmd.exe / PowerShell, o "conhost") usa fontes sem
+# alguns símbolos Unicode: ✓ ⚠ ✗ e o spinner braille do rich aparecem como quadrados.
+# Nele os trocamos por ASCII; no Windows Terminal e no VS Code os símbolos ficam.
+# Para forçar: variável de ambiente SOUNDVAULT_ASCII=1 (liga) ou 0 (desliga).
+SIMBOLOS_SIMPLES = False
+
+_TABELA_ASCII = str.maketrans({
+    "✓": "OK", "✗": "X", "⚠": "!", "⊘": "-", "↺": "~", "↳": ">",
+    "🧹": "*", "🔗": "@", "🗑": "x",
+})
+
+
+def precisa_ascii(env, os_name: str) -> bool:
+    """True se o console provavelmente não tem fonte para os símbolos Unicode."""
+    forcado = env.get("SOUNDVAULT_ASCII")
+    if forcado in ("0", "1"):
+        return forcado == "1"
+    if os_name != "nt":
+        return False
+    moderno = "WT_SESSION" in env or env.get("TERM_PROGRAM") == "vscode" or "ConEmuANSI" in env
+    return not moderno
+
+
+def traduzir_simbolos(texto: str) -> str:
+    return texto.translate(_TABELA_ASCII)
+
+
+class FluxoSimples:
+    """Envolve stdout/stderr e troca os símbolos problemáticos por ASCII ao escrever.
+    Todo o resto (isatty, encoding, fileno...) vem do fluxo de verdade."""
+
+    def __init__(self, destino):
+        self._destino = destino
+
+    def write(self, texto):
+        self._destino.write(traduzir_simbolos(texto))
+        return len(texto)
+
+    def writelines(self, linhas):
+        for linha in linhas:
+            self.write(linha)
+
+    def __getattr__(self, nome):
+        return getattr(self._destino, nome)
+
+
+def configurar_simbolos(env=None, os_name: str | None = None) -> bool:
+    """Liga a troca de símbolos se o console precisar. Idempotente. Devolve se ligou."""
+    global SIMBOLOS_SIMPLES
+    env = os.environ if env is None else env
+    os_name = os.name if os_name is None else os_name
+    if not precisa_ascii(env, os_name):
+        return False
+    for nome in ("stdout", "stderr"):
+        fluxo = getattr(sys, nome)
+        if not isinstance(fluxo, FluxoSimples):
+            setattr(sys, nome, FluxoSimples(fluxo))
+    SIMBOLOS_SIMPLES = True
+    return True
+
+
+def nome_do_spinner() -> str:
+    """Spinner do rich: braille no console moderno, uma barrinha ASCII girando no antigo."""
+    return "line" if SIMBOLOS_SIMPLES else "dots"
 
 
 def notificar_windows(titulo: str, mensagem: str):
@@ -126,6 +194,20 @@ def init_logging():
     root.addHandler(h)
     root.setLevel(logging.DEBUG)
     _logging_inicializado = True
+
+
+def limpar_tela() -> None:
+    """Limpa o terminal. No lugar do antigo os.system("cls"): não abre subprocesso e só
+    age em terminal interativo (em pipe/arquivo/tarefa agendada não escreve nada)."""
+    try:
+        if not sys.stdout.isatty():
+            return
+    except (AttributeError, ValueError):
+        return
+    if RICH_OK:
+        console.clear()
+    else:
+        print("\n" * 40)
 
 
 def cprint(msg, **kwargs):

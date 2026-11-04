@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import config
-from .console_log import console, RICH_OK, log, cprint, Table, Panel, box
+from .console_log import limpar_tela, console, RICH_OK, log, cprint, Table, Panel, box
 from .playlist import parsear, nome_arquivo, calcular_md5
 from . import playlists
 
@@ -12,7 +12,7 @@ from . import playlists
 def clean():
     """Remove do sync_state entradas cujo .mp3 não existe mais no disco."""
     from .storage import carregar_state, salvar_state
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     state = carregar_state()
     nomes_playlist = playlists.todas_as_musicas()
 
@@ -77,7 +77,7 @@ def detectar_duplicatas() -> dict:
 
 def limpar_duplicatas_playlist(nome: str):
     """Remove entradas duplicadas do playlist.txt de UMA playlist, mantendo a primeira ocorrência."""
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     playlist_txt = playlists.caminho_playlist_txt(nome)
     if not playlist_txt.exists():
         cprint(f"[yellow]playlist.txt da playlist '{nome}' não encontrado.[/]")
@@ -130,7 +130,7 @@ def limpar_duplicatas():
     de arquivo esperado pela playlist ATUAL (playlist.txt), não apenas
     "tem ' - ' no nome" — evita manter uma cópia com nome desatualizado.
     """
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     if RICH_OK:
         console.print(Panel("[bold]Escaneando duplicatas por MD5...[/]", border_style="blue"))
     else:

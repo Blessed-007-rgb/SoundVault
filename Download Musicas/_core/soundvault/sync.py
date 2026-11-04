@@ -1,12 +1,11 @@
-import os
 import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from . import config, cookies, download
-from .console_log import console, RICH_OK, log, cprint, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, Prompt, box
+from . import config, cookies, disco, download
+from .console_log import limpar_tela, nome_do_spinner, console, RICH_OK, log, cprint, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn, TextColumn, Prompt, box
 from .lock import adquirir_lock, liberar_lock
 from .progresso import barra_de_render
 from .playlist import parsear, nome_arquivo, sanitizar, extrair_video_id
@@ -103,6 +102,36 @@ class _DynamicGate:
             self._cond.notify_all()
 
 
+def _espaco_suficiente(alvo_nomes: list[str], n_downloads: int) -> bool:
+    """Confere o disco ANTES de baixar/renderizar. True = pode seguir.
+
+    Sobra pouco: avisa e segue. Não cabe (ou ficaria sem reserva): pergunta, com
+    padrão Não — e sem terminal interativo (tarefa agendada, pipe) aborta por segurança."""
+    n_renders = sum(playlists.renders_pendentes(n) for n in alvo_nomes)
+    e = disco.avaliar(n_downloads, n_renders)
+    if e.status == disco.OK:
+        return True
+    msg = disco.descrever(e)
+    if e.status == disco.AVISO:
+        log.warning(f"[DISCO] {msg} (vai sobrar pouco)")
+        cprint(f"[yellow]⚠ {msg} Vai sobrar pouco espaço.[/]" if RICH_OK else f"AVISO: {msg} Vai sobrar pouco espaco.")
+        return True
+    log.error(f"[DISCO] {msg} (não cabe)")
+    cprint(f"[bold red]✗ {msg}[/]\n[red]  Não deve caber: o Sync pode parar no meio e deixar arquivos pela metade.[/]" if RICH_OK
+           else f"ERRO: {msg} Nao deve caber.")
+    try:
+        if RICH_OK:
+            resposta = Prompt.ask("  Continuar mesmo assim?", choices=["S", "s", "N", "n"], default="N").upper()
+        else:
+            resposta = input("Continuar mesmo assim? [s/N]: ").strip().upper()
+    except (EOFError, KeyboardInterrupt):
+        resposta = "N"
+    if resposta != "S":
+        cprint("[yellow]Sync cancelado — libere espaço e rode de novo (nada foi alterado).[/]" if RICH_OK else "Sync cancelado.")
+        return False
+    return True
+
+
 def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
     adquirir_lock()
     cookies.reset_sessao()
@@ -111,7 +140,7 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
     # reduzidos (e "N bloqueios" acumulados) por causa do Sync anterior.
     download.resetar_contadores()
     try:
-        os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+        limpar_tela()
         log.debug("sincronizar() chamada")
         log.info(f"=== INICIANDO SYNC — perfil: {config.BASE_DIR.name} | DOWNLOAD_DIR: {config.DOWNLOAD_DIR} ===")
         if RICH_OK:
@@ -327,6 +356,9 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
                            else f"  {baixa_confianca} URL(s) com baixa confianca - use a opcao V para revisar.")
                 pendentes = {n: d for n, d in pendentes.items() if entrada_cache_valida(d)}
 
+        if not _espaco_suficiente(alvo_nomes, len(pendentes)):
+            return
+
         if not pendentes:
             cprint("[green]✓ Tudo já está sincronizado![/]")
             for n in alvo_nomes:
@@ -444,7 +476,7 @@ def sincronizar(nome_playlist: str | None = None, apenas_falhas: bool = False):
 
         if RICH_OK:
             with Progress(
-                SpinnerColumn(), TextColumn("[bold blue]{task.description}"),
+                SpinnerColumn(nome_do_spinner()), TextColumn("[bold blue]{task.description}"),
                 BarColumn(bar_width=34), MofNCompleteColumn(), TimeElapsedColumn(),
                 console=console,
             ) as prog:

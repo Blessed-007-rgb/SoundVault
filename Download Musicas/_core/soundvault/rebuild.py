@@ -1,8 +1,7 @@
-import os
 from datetime import datetime
 
 from . import config, eq_presets
-from .console_log import console, RICH_OK, cprint, log, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, box
+from .console_log import limpar_tela, nome_do_spinner, console, RICH_OK, cprint, log, Table, Panel, Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, box
 from .playlist import parsear, nome_arquivo, sanitizar, calcular_md5, detectar_colisoes, MUTAGEN_OK
 from . import playlists
 from .progresso import barra_de_render
@@ -15,7 +14,7 @@ def rebuild():
     """
     Reconstrói o sync_state.json analisando os .mp3 já existentes no disco.
     """
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     if RICH_OK:
         console.print(Panel("[bold]Reconstruindo sync_state.json[/]", border_style="blue"))
     else:
@@ -103,14 +102,14 @@ def rebuild():
 
 
 def fix_tags():
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     if not MUTAGEN_OK:
         cprint("[red]mutagen não instalado:[/] pip install mutagen")
         return
     arquivos = [f for f in config.DOWNLOAD_DIR.glob("*.mp3") if not f.stem.startswith("__dl_")]
     ok = 0
     if RICH_OK:
-        with Progress(SpinnerColumn(), BarColumn(bar_width=36), MofNCompleteColumn(), console=console) as prog:
+        with Progress(SpinnerColumn(nome_do_spinner()), BarColumn(bar_width=36), MofNCompleteColumn(), console=console) as prog:
             task = prog.add_task("Tags...", total=len(arquivos))
             for f in arquivos:
                 if " - " in f.stem:
@@ -118,7 +117,7 @@ def fix_tags():
                     gravar_tags(f, artista.strip(), titulo.strip())
                     ok += 1
                 prog.advance(task)
-        cprint(f"[green]✓ Metadados e capas gravados em {ok} arquivos.[/]")
+        cprint(f"[green]✓ Metadados gravados em {ok} arquivos.[/]")
     else:
         for f in arquivos:
             if " - " in f.stem:
@@ -143,7 +142,7 @@ def reaplicar_audio(nome_playlist: str | None = None, preset_id: str | None = No
     precisa — preset trocado numa playlist, ou mudança na receita de EQ
     no código (eq_presets.py).
     """
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     import shutil
     if not shutil.which("ffmpeg"):
         cprint("[red]FFmpeg não encontrado no PATH.[/]")

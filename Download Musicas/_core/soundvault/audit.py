@@ -1,7 +1,6 @@
-import os
 
 from . import config
-from .console_log import console, RICH_OK, Table, Panel, box
+from .console_log import limpar_tela, console, RICH_OK, Table, Panel, box
 from .playlist import parsear, nome_arquivo, checar_integridade, detectar_colisoes
 from . import playlists
 from .storage import carregar_cache, carregar_state, carregar_falhas, entrada_cache_valida
@@ -20,7 +19,7 @@ def auditoria(nome_playlist: str | None = None):
     playlists, mesmo quando auditando uma só — um arquivo só é órfão de
     verdade se nenhuma playlist do perfil precisa dele.
     """
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     todas = playlists.todas_as_musicas()
     playlist = list(todas) if nome_playlist is None else playlists.carregar_playlist(nome_playlist)
     cache = carregar_cache()

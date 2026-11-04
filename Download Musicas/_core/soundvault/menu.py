@@ -1,7 +1,6 @@
-import os
 
 from . import config, eq_presets, playlists
-from .console_log import console, RICH_OK, cprint, log, Table, Panel, Prompt, Group, Text, box
+from .console_log import limpar_tela, console, RICH_OK, cprint, log, Table, Panel, Prompt, Group, Text, box
 from .storage import carregar_state, salvar_state, carregar_historico
 from .lock import LockError
 from .sync import sincronizar
@@ -19,7 +18,7 @@ def resetar_skips_copyright():
     Lista músicas puladas por copyright/indisponível e permite resetá-las
     para que sejam retentadas no próximo Sync.
     """
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     state = carregar_state()
     puladas = [(vid, info) for vid, info in state.items() if isinstance(info, dict) and info.get("skipped")]
 
@@ -173,7 +172,7 @@ def reaplicar_audio_interativo():
 
 def gerenciar_playlists():
     while True:
-        os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+        limpar_tela()
         nomes = playlists.listar_playlists()
         if RICH_OK:
             t = Table(box=box.ROUNDED, show_header=True, header_style="bold dim", padding=(0, 2))
@@ -228,7 +227,7 @@ def configurar_eq():
     chamando reconciliar_links — senão só entra em vigor no próximo Sync
     dessa playlist.
     """
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     nomes = playlists.listar_playlists()
     if not nomes:
         cprint("[yellow]Nenhuma playlist encontrada. Use 'Gerenciar Playlists' (G) pra criar uma.[/]")
@@ -308,7 +307,7 @@ def configurar_eq():
 
 
 def mostrar_help():
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     if RICH_OK:
         console.print(Panel(
             "[bold]SoundVault[/]\n"
@@ -327,7 +326,7 @@ def mostrar_help():
         t2.add_row("6 · Limpar Registros", "Use quando deletar músicas manualmente do disco.\nRemove os registros delas — o próximo Sync vai rebaixar.")
         t2.add_row("7 · Verificar Cache", "Use se o Sync mostrar músicas sem URL.\nValida o playlist_cache.json e aponta entradas problemáticas.")
         t2.add_row("8 · Reaplicar Áudio", "Use após mudar preset de uma playlist ou o código de EQ.\nEscolha a playlist (ou todas) e o EQ: mantém o atual ou troca na hora.")
-        t2.add_row("9 · Corrigir Metadados", "Use se músicas aparecerem sem nome/artista no player.\nRegrava título, artista e capa em todos os .mp3.")
+        t2.add_row("9 · Corrigir Metadados", "Use se músicas aparecerem sem nome/artista no player.\nRegrava título e artista em todos os .mp3.")
         t2.add_row("E · Configurar EQ", "Use pra mudar o preset de som de uma playlist.\nPadrão, Fone de Ouvido, Caixa de Som ou Som Automotivo.")
         t2.add_row("U · Adicionar URL Manual", "Use quando a busca automática não achou a música.\nCole o link do YouTube de cada uma; depois rode Sync.")
         t2.add_row("V · Revisar URLs", "Use depois do Sync se ele avisar 'URL com baixa confiança'.\nAceite, rejeite (busca outro vídeo) ou cole a URL certa.")
@@ -365,7 +364,7 @@ MENU = [
     ("6", "Limpar Registros",       "Remove registros de músicas que não existem mais no disco"),
     ("7", "Verificar Cache",        "Verifica integridade do playlist_cache.json"),
     ("8", "Reaplicar Áudio",        "Escolhe a playlist e qual EQ aplicar, e re-renderiza"),
-    ("9", "Corrigir Metadados",     "Grava título, artista e capa nos .mp3 existentes"),
+    ("9", "Corrigir Metadados",     "Grava título e artista nos .mp3 existentes"),
     ("E", "Configurar EQ",          "Escolhe o preset de EQ/loudness de uma playlist"),
     ("U", "Adicionar URL Manual",   "Cola o link do YouTube de músicas não encontradas"),
     ("V", "Revisar URLs",           "Confere as URLs achadas automaticamente com baixa confiança"),
@@ -387,7 +386,7 @@ GRUPOS_MENU = [
 
 
 def exibir_menu():
-    os.system("cls")  # comando literal fixo, sem entrada do usuário — não é injeção
+    limpar_tela()
     if RICH_OK:
         hist = carregar_historico()
         if hist:

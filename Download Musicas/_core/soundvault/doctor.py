@@ -100,8 +100,9 @@ def checar_js() -> list[Check]:
 def checar_pacotes() -> list[Check]:
     itens = [
         ("rich", "interface visual do menu", "sem ele o menu cai para o modo texto simples"),
-        ("mutagen", "tags ID3 e capas dos MP3", "sem ele as músicas ficam sem título, artista e capa"),
+        ("mutagen", "tags ID3 dos MP3", "sem ele as músicas ficam sem título e artista"),
         ("psutil", "trava contra duas execuções ao mesmo tempo", "sem ele o lock não confere se o outro processo ainda existe"),
+        ("spotapi", "export de playlists do Spotify", "sem ele o export do Spotify não funciona"),
     ]
     saida = []
     for modulo, para_que, sem_ele in itens:

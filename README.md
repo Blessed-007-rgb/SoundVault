@@ -29,7 +29,7 @@ pip install -U -r requirements.txt
 - `yt-dlp[default]` → faz os downloads do YouTube (a variante `[default]` traz o
   `yt-dlp-ejs`, que resolve os desafios de JavaScript do YouTube)
 - `rich` → interface visual do menu
-- `mutagen` → grava metadados e capa nos MP3
+- `mutagen` → grava metadados (título e artista) nos MP3
 - `psutil` → trava que impede duas execuções ao mesmo tempo
 
 Depois de instalar tudo (inclusive FFmpeg e Node.js, abaixo), confira com:
@@ -161,7 +161,7 @@ execução.
 | 6 | Limpar Registros | Remove do `sync_state.json` entradas cujo MP3 não existe mais no disco. |
 | 7 | Verificar Cache | Valida o `playlist_cache.json`: entradas sem URL, URLs inválidas, IDs errados. |
 | 8 | Reaplicar Áudio | Re-renderiza as playlists existentes com o preset de EQ/loudness de cada uma. Use depois de mudar um preset ou o código de EQ. |
-| 9 | Corrigir Metadados | Grava título, artista e capa nos MP3 existentes. |
+| 9 | Corrigir Metadados | Grava título e artista nos MP3 existentes. |
 | U | Adicionar URL Manual | Cola o link do YouTube de músicas que a busca automática não achou (ou que falharam). |
 | V | Revisar URLs | Lista as URLs que a busca automática achou com **baixa confiança** (menos de 80), da menos para a mais confiável. Para cada uma: aceitar, rejeitar (apaga o download e busca outro vídeo no próximo Sync, sem repetir o rejeitado) ou colar a URL certa. |
 | D | Diagnóstico | Confere ffmpeg, Node.js, pacotes, espaço em disco, cookie e cache, e diz como resolver (`--doctor` na linha de comando). |
@@ -350,6 +350,21 @@ Todos os logs ficam em `NomeDoPerfil\Logs\`:
 **Node.js não encontrado**
 - Necessário para o `yt-dlp` funcionar → instale em nodejs.org e
   reinicie o Prompt
+
+**Aviso de espaço em disco no início do Sync**
+- Antes de baixar/renderizar, o Sync estima o que vai gravar (cada música
+  ocupa o MP3 cru no pool **mais** uma cópia renderizada por playlist) e
+  compara com o espaço livre. Se sobrar pouco, só avisa. Se **não couber** (ou
+  não sobrar 1 GB de reserva), pergunta se quer continuar — o padrão é **Não**,
+  e sem terminal interativo (tarefa agendada) ele cancela sozinho. O `--doctor`
+  mostra o espaço livre e o tamanho atual do pool.
+
+**Ícones (✓ ⚠ ✗) ou o spinner aparecem como quadrados**
+- É a fonte do `cmd.exe`/PowerShell clássico, que não tem esses símbolos.
+  O SoundVault detecta esse console e usa `OK`, `!`, `X` e um spinner ASCII.
+  No Windows Terminal e no VS Code os símbolos normais são mantidos. Para
+  forçar: defina `SOUNDVAULT_ASCII=1` (sempre ASCII) ou `SOUNDVAULT_ASCII=0`
+  (sempre símbolos, útil se o seu `cmd` usa uma fonte como Cascadia Mono).
 
 **Execução duplicada (`.lock`)**
 - O sistema usa um arquivo `.lock` para evitar dois syncs simultâneos.
