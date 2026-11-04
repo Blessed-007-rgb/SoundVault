@@ -10,7 +10,7 @@ Tudo roda a partir de `Download Musicas/_core/`:
 
 ```bash
 cd "Download Musicas/_core"
-python -m pytest tests -q -p no:cacheprovider          # suíte inteira (~6 s, precisa de ffmpeg no PATH)
+python -m pytest tests -q -p no:cacheprovider          # suíte inteira (~30 s, precisa de ffmpeg no PATH)
 python -m pytest tests/test_search.py::TestPontuar -q  # um teste/classe
 pyright                                                # usa pyrightconfig.json (soundvault + tests); meta: 0 erros
 ruff check --select F,E9,B904 soundvault tests         # erros reais; o lint "completo" tem centenas de avisos de estilo antigos
@@ -51,6 +51,13 @@ Convenções que não são óbvias lendo um arquivo só:
 ## Testes
 
 `tests/conftest.py` aponta `SOUNDVAULT_ROOT_DIR` para uma pasta temporária **antes** de importar `soundvault.config` (que cria pastas no import) e a fixture `perfil` isola cada teste num perfil novo. Testes de áudio geram MP3 com `ffmpeg -f lavfi` e se pulam sem ffmpeg. `tests/test_sync_e2e.py` roda o `sincronizar` inteiro com o yt-dlp simulado (`YtDlpFalso` substitui `subprocess.run` só para o yt-dlp; ffmpeg/mutagen são reais): ao mexer no Sync, rode-o. Em testes, faça o patch de `sys.stdout` DENTRO do teste (o pytest o reinstala ao entrar na fase de execução, descartando patch de fixture). Ao mudar comportamento, adicione teste de regressão.
+
+## Mexer na interface do terminal
+
+- Teste em console de verdade antes de entregar (o usuário usa `cmd.exe` clássico e já viu a tela quebrar duas vezes): rode um script com `cmd.exe //c start //wait "" python script.py`, maximize com `user32.ShowWindow(kernel32.GetConsoleWindow(), 3)`, envie teclas com `WriteConsoleInputW` e leia a tela de volta com `ReadConsoleOutputCharacterW`. Renderizar o rich num `StringIO` não pega bug de conhost.
+- Não rode `python -m soundvault ...` em segundo plano sem terminal: o `input()` final fica esperando e o processo sobra (o `--doctor` aceita `diagnosticar(rede=False)` por import). Confira com `wmic process where "name='python.exe'" get ProcessId,CommandLine` e encerre o que sobrar.
+- Ao gerar código com barra invertida via heredoc de shell (`\n`, `\t`), ela é colapsada e quebra string literal; use Edit/Write, ou monte com `chr(92)`. Mexa em `.py` CRLF com script que normaliza `\r\n`.
+- O hook de pós-edição pode acusar F401/F821/F841 no meio de uma sequência de edições (import adicionado antes do uso); confirme com `ruff` e `pyright` na CLI ao final antes de agir.
 
 ## Edição de arquivos
 
