@@ -10,13 +10,9 @@ Spotify export só existe pra você não ter que digitar a lista à mão).
 pip install spotapi
 ```
 
-Isso habilita o caminho rápido (sem browser). O `.bat` também tenta
-instalar sozinho na primeira vez, mas se der algum problema (rede,
-permissão, etc.) rode o comando acima manualmente antes.
-
-Se não instalar (ou a instalação falhar), o script cai automaticamente
-pro fallback via Playwright — que baixa o Chromium sozinho na primeira
-vez, sem precisar rodar nada manualmente.
+O `.bat` instala sozinho na primeira vez, mas se der algum problema
+(rede, permissão, etc.) rode o comando acima manualmente. Sem o
+`spotapi` o export não funciona (o `python -m soundvault --doctor` avisa).
 
 ## Como usar
 
@@ -61,22 +57,16 @@ querer:
 
 ## Como a extração funciona por baixo dos panos
 
-O script tenta dois métodos, nessa ordem:
+A extração usa o **SpotAPI** (rápido, leva segundos, não abre browser
+nenhum e não pede login): ele usa os mesmos endpoints internos que
+`open.spotify.com` usa, com um token anônimo. Funciona pra qualquer
+playlist que você tenha o link, mesmo que ela não esteja marcada como
+"pública" no seu perfil.
 
-1. **SpotAPI** (rápido, ~segundos, não abre browser nenhum) — usa os
-   mesmos endpoints internos que `open.spotify.com` usa, com um token
-   anônimo. Funciona pra qualquer playlist que você tenha o link, mesmo
-   que ela não esteja marcada como "pública" no seu perfil.
-2. **Fallback via browser** (Playwright) — só entra em ação se o SpotAPI
-   não estiver instalado, falhar, ou a playlist realmente exigir login
-   (compartilhamento restrito de verdade). Nesse caso abre um Chromium de
-   verdade e pede pra você logar no Spotify (a sessão fica salva, só
-   precisa logar na primeira vez — 2FA/código por e-mail incluso se a sua
-   conta usar).
-
-Você não precisa escolher qual usar — o `.bat` já tenta instalar o SpotAPI
-sozinho (opcional, silencioso) e cai pro Playwright automaticamente se
-precisar.
+**Limitação:** playlists de compartilhamento restrito de verdade (que
+não abrem pelo link sem estar logado) não são suportadas. Nesse caso o
+script avisa e **não altera nada**. Antes existia um modo alternativo por
+navegador (Playwright), que foi removido por ser lento e frágil.
 
 ## Rodando direto pela linha de comando (avançado)
 
@@ -95,9 +85,11 @@ spotify_export.bat "https://open.spotify.com/playlist/..." "NomeDaPlaylist"
   o `playlist.txt` existente se capturar menos de 90% das músicas
   esperadas, pra nunca trocar uma lista boa por uma incompleta. Rode de
   novo — geralmente resolve.
-- **Pede login toda vez** — normal apenas na primeira vez (via Playwright);
-  da segunda em diante a sessão fica salva em
-  `Spotify export\.spotify_session\`. Se voltar a pedir login toda vez,
-  essa pasta pode ter sido apagada ou corrompida.
+- **"o SpotAPI não conseguiu ler a playlist"** — o link não é de uma
+  playlist, a playlist é de compartilhamento restrito, ou o Spotify mudou
+  a API (nesse caso `pip install -U spotapi` costuma resolver).
+- **Sobrou a pasta `.spotify_session\`** — era a sessão salva do antigo
+  modo por navegador. Não é mais usada e pode ser apagada (ela guarda um
+  perfil do Chromium com a sua sessão logada no Spotify).
 - **Log detalhado**: qualquer erro fica registrado em
   `spotify_export_debug.log`, nesta mesma pasta.

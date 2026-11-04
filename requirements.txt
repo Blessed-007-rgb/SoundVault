@@ -10,3 +10,5 @@ rich
 mutagen
 # usado pelo lock que impede duas execuções simultâneas (sem ele o lock não confere o PID)
 psutil
+# export de playlists do Spotify (python -m soundvault.spotify_export); sem ele o export nao funciona
+spotapi

@@ -65,7 +65,7 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
         if arq_dono and checar_integridade(arq_dono):
             try:
                 shutil.copy2(arq_dono, destino)
-                gravar_tags(destino, artista, titulo, url_video=url)
+                gravar_tags(destino, artista, titulo)
                 chave_dup = f"dup_{video_id}_{hashlib.md5(chave.encode('utf-8')).hexdigest()[:8]}"
                 with _state_lock:
                     state[chave_dup] = {
@@ -180,7 +180,7 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
                             # Sync seguinte.
                             os.replace(mp3, destino)
                             if checar_integridade(destino):
-                                gravar_tags(destino, artista, titulo, url_video=alt_url)
+                                gravar_tags(destino, artista, titulo)
                                 # video_id pode vir vazio quando a música original
                                 # também tinha sido resolvida por busca automática
                                 # (cache com "id": "") — sem extrair o ID da
@@ -258,7 +258,7 @@ def baixar(chave: str, url: str, video_id: str, state: dict) -> tuple[bool, str,
             ultimo_erro = "arquivo corrompido ou vazio"
             continue
 
-        gravar_tags(destino, artista, titulo, url_video=url)
+        gravar_tags(destino, artista, titulo)
 
         if video_id:
             h = calcular_md5(destino)

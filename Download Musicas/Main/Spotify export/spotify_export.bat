@@ -19,33 +19,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Instalar spotapi (opcional, caminho rapido sem browser) — melhor
-:: esforco, nao bloqueia se falhar: o script cai pro Playwright sozinho.
+:: O export usa o SpotAPI (sem browser, sem login). Instala sozinho na
+:: primeira vez; se nao conseguir, avisa em vez de seguir sem ele.
 python -c "import spotapi" >nul 2>&1
 if errorlevel 1 (
-    echo Instalando spotapi ^(caminho rapido, opcional^)...
-    pip install spotapi >nul 2>&1
-)
-
-:: Verificar playwright instalado
-python -c "import playwright" >nul 2>&1
-if errorlevel 1 (
-    echo Instalando playwright...
-    pip install playwright
+    echo Instalando spotapi ^(so na primeira vez^)...
+    pip install spotapi
     if errorlevel 1 (
-        echo ERRO: falha ao instalar playwright.
+        echo ERRO: falha ao instalar o spotapi. Rode manualmente: pip install spotapi
         pause
         exit /b 1
     )
-)
-
-:: Verificar Chromium instalado — checa a pasta real de instalacao no
-:: Windows (%LOCALAPPDATA%\ms-playwright) em vez de "--dry-run", que
-:: sempre retornava sucesso e nunca disparava a instalacao real numa
-:: maquina nova (bug 21).
-if not exist "%LOCALAPPDATA%\ms-playwright" (
-    echo Instalando Chromium ^(apenas na primeira vez^)...
-    python -m playwright install chromium
 )
 
 :: Link e playlist de destino — usa argumentos se foram passados

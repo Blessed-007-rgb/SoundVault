@@ -99,21 +99,42 @@ class TestRenderizar:
 
 
 class TestTags:
-    def test_capa_nao_duplica_em_regravacoes(self, tmp_path, monkeypatch):
-        """Regressão: `"APIC:" not in tags` era sempre True e empilhava capas."""
+    @pytest.fixture
+    def mp3(self, tmp_path):
         pytest.importorskip("mutagen")
-        from mutagen.id3 import ID3
-        mp3 = tmp_path / "t.mp3"
-        if FFMPEG:
-            _gerar_mp3(mp3)
-        else:
+        if not FFMPEG:
             pytest.skip("precisa de ffmpeg pra gerar o MP3")
-        monkeypatch.setattr(tags, "_baixar_thumbnail", lambda url: b"\xff\xd8" + b"x" * 5000)
-        for _ in range(3):
-            tags.gravar_tags(mp3, "Artista", "Título", url_video="https://youtu.be/xLQ1QkGB6bk")
+        arq = tmp_path / "t.mp3"
+        _gerar_mp3(arq)
+        return arq
+
+    def test_grava_titulo_artista_e_album_sem_capa(self, mp3, monkeypatch):
+        """A funcionalidade de capa foi removida: só texto, e nenhuma chamada de rede."""
+        from mutagen.id3 import ID3
+        import urllib.request
+
+        def sem_rede(*a, **k):
+            raise AssertionError("gravar_tags não deve acessar a rede")
+        monkeypatch.setattr(urllib.request, "urlopen", sem_rede)
+        for _ in range(3):                                      # regravar não acumula nada
+            tags.gravar_tags(mp3, "Artista", "Título")
         t = ID3(str(mp3))
-        assert len(t.getall("APIC")) == 1
-        assert str(t["TIT2"]) == "Título" and str(t["TPE1"]) == "Artista"
+        assert (str(t["TIT2"]), str(t["TPE1"]), str(t["TALB"])) == ("Título", "Artista", "Artista")
+        assert t.getall("APIC") == []
+
+    def test_a_funcao_de_capa_nao_existe_mais(self):
+        assert not hasattr(tags, "_baixar_thumbnail")
+        import inspect
+        assert "url_video" not in inspect.signature(tags.gravar_tags).parameters
+
+    def test_nao_remove_capa_que_ja_existia_no_arquivo(self, mp3):
+        """Arquivos antigos com capa continuam intactos (só deixamos de embutir novas)."""
+        from mutagen.id3 import APIC, ID3
+        t = ID3(str(mp3)) if mp3.stat().st_size else ID3()
+        t.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=b"\xff\xd8" + b"x" * 2000))
+        t.save(str(mp3), v2_version=3)
+        tags.gravar_tags(mp3, "A", "B")
+        assert len(ID3(str(mp3)).getall("APIC")) == 1
 
 
 class TestPlaylists:
@@ -180,7 +201,6 @@ class TestReaplicarAudio:
             playlists.criar_playlist(nome)
         vistas = []
         monkeypatch.setattr(playlists, "reconciliar_links", lambda n, cb=None: (vistas.append(n) or (1, 0, [])))
-        monkeypatch.setattr(rebuild.os, "system", lambda *a: 0)
         monkeypatch.setattr("shutil.which", lambda *_: "ffmpeg")
         return rebuild, vistas
 
